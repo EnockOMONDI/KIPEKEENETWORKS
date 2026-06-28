@@ -24,10 +24,10 @@ Use the Supabase pooler URL for app runtime:
 DATABASE_URL="postgresql://postgres.cfrgznfjspowdomzjfsc:[YOUR-PASSWORD]@aws-1-eu-central-1.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=1"
 ```
 
-Use the direct Supabase URL for Prisma migrations:
+Use the Supabase session pooler URL for Prisma migrations. This avoids local IPv6 issues with the direct database host:
 
 ```env
-DIRECT_URL="postgresql://postgres:[YOUR-PASSWORD]@db.cfrgznfjspowdomzjfsc.supabase.co:5432/postgres"
+DIRECT_URL="postgresql://postgres.cfrgznfjspowdomzjfsc:[YOUR-PASSWORD]@aws-1-eu-central-1.pooler.supabase.com:5432/postgres?connect_timeout=30"
 ```
 
 Set these on Render:

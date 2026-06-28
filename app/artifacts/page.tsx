@@ -1,0 +1,84 @@
+import { AppShell, Badge, Card, EmptyState, PageHeader } from "@/components/AppShell";
+import { SubmitButton } from "@/components/Interactive";
+import { uploadArtifactAction } from "@/lib/actions";
+import { requireUser } from "@/lib/auth";
+import { prisma } from "@/lib/db";
+
+export default async function ArtifactsPage() {
+  const user = await requireUser();
+  const [employees, artifacts] = await Promise.all([
+    prisma.companyEmployee.findMany({
+      where: { companyId: user.companyId },
+      orderBy: { displayName: "asc" }
+    }),
+    prisma.artifact.findMany({
+      where: { companyId: user.companyId },
+      include: { access: { include: { employee: true } } },
+      orderBy: { createdAt: "desc" }
+    })
+  ]);
+
+  return (
+    <AppShell companyName={user.company.name} companySlug={user.company.slug} userEmail={user.email} userRole={user.role}>
+      <PageHeader
+        eyebrow="Artifacts"
+        title="Files and document memory"
+        description="Every upload is stored as an artifact first. The user decides whether it becomes memory and which AI employees can access it."
+      />
+      <div className="grid gap-5 lg:grid-cols-[380px_1fr]">
+        <Card>
+          <h2 className="text-lg font-semibold">Upload file</h2>
+          <form action={uploadArtifactAction} className="mt-4 space-y-4">
+            <input className="w-full rounded-md border border-black/10 px-3 py-2 text-sm" name="file" required type="file" />
+            <label className="flex items-center gap-2 text-sm font-medium">
+              <input name="addToMemory" type="checkbox" />
+              Add this artifact to memory
+            </label>
+            <div>
+              <p className="mb-2 text-sm font-semibold">Which AI employees can access it?</p>
+              <div className="max-h-72 space-y-2 overflow-auto rounded-md border border-black/10 bg-paper p-3">
+                {employees.map((employee) => (
+                  <label className="flex items-center gap-2 text-sm" key={employee.id}>
+                    <input name="employeeIds" type="checkbox" value={employee.id} />
+                    {employee.displayName}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <SubmitButton className="w-full" pendingText="Uploading and indexing">
+              Upload artifact
+            </SubmitButton>
+          </form>
+        </Card>
+        <div className="space-y-3">
+          {artifacts.length ? (
+            artifacts.map((artifact) => (
+              <Card key={artifact.id}>
+                <div className="flex flex-col justify-between gap-3 md:flex-row">
+                  <div>
+                    <h2 className="font-semibold">{artifact.title}</h2>
+                    <p className="mt-1 text-sm text-graphite">{artifact.kind}</p>
+                  </div>
+                  <Badge tone={artifact.memoryStatus === "MEMORY_INDEXED" ? "success" : "neutral"}>
+                    {artifact.memoryStatus === "MEMORY_INDEXED" ? "Memory indexed" : "Artifact only"}
+                  </Badge>
+                </div>
+                <p className="mt-3 text-sm leading-6 text-graphite">
+                  Access:{" "}
+                  {artifact.access.length
+                    ? artifact.access.map((item) => item.employee.displayName).join(", ")
+                    : "No employees selected"}
+                </p>
+              </Card>
+            ))
+          ) : (
+            <EmptyState
+              title="No artifacts yet"
+              description="Upload company documents, SOPs, proposals, policies, or templates, then decide which AI employees can use them as memory."
+            />
+          )}
+        </div>
+      </div>
+    </AppShell>
+  );
+}

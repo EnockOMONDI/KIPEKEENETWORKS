@@ -1,0 +1,16 @@
+node_modules
+.next
+.env
+.env.*
+!.env.example
+prisma/dev.db
+prisma/dev.db-journal
+*.db
+*.db-journal
+dist
+uploads
+.DS_Store
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*

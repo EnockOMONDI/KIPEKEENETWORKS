@@ -1,0 +1,284 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Company {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  status      String   @default("TRIAL")
+  isolationTier String @default("SHARED")
+  hermesNamespace String?
+  hermesHomePath String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users       User[]
+  invites     TeamInvite[]
+  employees   CompanyEmployee[]
+  artifacts   Artifact[]
+  sessions    Session[]
+  hermesJobs  HermesJob[]
+  loops       BusinessLoop[]
+  audits      AuditLog[]
+  approvals   ApprovalRequest[]
+  invoices    Invoice[]
+  integrations IntegrationConnection[]
+  subscription Subscription?
+}
+
+model User {
+  id        String   @id @default(cuid())
+  companyId String
+  name      String
+  email     String
+  passwordHash String?
+  role      String   @default("MEMBER")
+  createdAt DateTime @default(now())
+
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  authSessions AuthSession[]
+
+  @@unique([companyId, email])
+}
+
+model TeamInvite {
+  id        String   @id @default(cuid())
+  companyId String
+  name      String
+  email     String
+  role      String
+  tokenHash String   @unique
+  invitedBy String
+  expiresAt DateTime
+  acceptedAt DateTime?
+  createdAt DateTime @default(now())
+
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, email])
+}
+
+model AuthSession {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model OnboardingPackage {
+  id                String   @id @default(cuid())
+  name              String   @unique
+  priceKes          Int?
+  description       String
+  includedEmployees Int?
+  loopsEnabled      Boolean  @default(false)
+  documentMemory    Boolean  @default(true)
+  createdAt         DateTime @default(now())
+
+  subscriptions     Subscription[]
+}
+
+model Subscription {
+  id                  String   @id @default(cuid())
+  companyId           String   @unique
+  onboardingPackageId String?
+  monthlyUserPriceKes Int      @default(4500)
+  paidUsers           Int      @default(1)
+  setupFeeKes         Int      @default(0)
+  active              Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  company             Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  onboardingPackage   OnboardingPackage? @relation(fields: [onboardingPackageId], references: [id])
+}
+
+model EmployeeTemplate {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String
+  defaultTools String
+  createdAt   DateTime @default(now())
+
+  employees   CompanyEmployee[]
+}
+
+model CompanyEmployee {
+  id              String   @id @default(cuid())
+  companyId       String
+  templateId      String
+  displayName     String
+  hermesProfile   String?
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+
+  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  template        EmployeeTemplate @relation(fields: [templateId], references: [id])
+  artifactAccess  ArtifactAccess[]
+  sessions        Session[]
+  loops           BusinessLoop[]
+  hermesJobs      HermesJob[]
+}
+
+model Artifact {
+  id            String   @id @default(cuid())
+  companyId     String
+  uploadedBy    String?
+  title         String
+  kind          String
+  storagePath   String
+  extractedText String?
+  memoryStatus  String   @default("ARTIFACT_ONLY")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  access        ArtifactAccess[]
+}
+
+model ArtifactAccess {
+  id         String   @id @default(cuid())
+  artifactId String
+  employeeId String
+  canUseAsMemory Boolean @default(false)
+  createdAt  DateTime @default(now())
+
+  artifact   Artifact @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+  employee   CompanyEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([artifactId, employeeId])
+}
+
+model Session {
+  id         String   @id @default(cuid())
+  companyId  String
+  employeeId String
+  title      String
+  pinned     Boolean  @default(false)
+  archived   Boolean  @default(false)
+  summary    String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  company    Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee   CompanyEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  messages   Message[]
+  hermesJobs HermesJob[]
+}
+
+model Message {
+  id        String   @id @default(cuid())
+  sessionId String
+  role      String
+  content   String
+  createdAt DateTime @default(now())
+
+  session   Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
+
+model HermesJob {
+  id                 String   @id @default(cuid())
+  companyId          String
+  employeeId         String
+  sessionId          String
+  prompt             String
+  employeeName       String
+  hermesProfile      String?
+  companyName        String
+  isolationTier      String
+  hermesNamespace    String?
+  allowedArtifactIds String   @default("[]")
+  allowedToolsets    String   @default("[]")
+  memoryContext      String?
+  status             String   @default("PENDING")
+  result             String?
+  error              String?
+  lockedAt           DateTime?
+  lockedBy           String?
+  attempts           Int      @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  completedAt        DateTime?
+
+  company            Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee           CompanyEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  session            Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
+
+model BusinessLoop {
+  id          String   @id @default(cuid())
+  companyId   String
+  employeeId  String
+  name        String
+  schedule    String
+  status      String   @default("DRAFT")
+  requiresApproval Boolean @default(true)
+  outputTarget String
+  createdAt   DateTime @default(now())
+
+  company     Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee    CompanyEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  companyId String
+  actor     String
+  action    String
+  target    String
+  metadata  String?
+  createdAt DateTime @default(now())
+
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+model ApprovalRequest {
+  id          String   @id @default(cuid())
+  companyId   String
+  title       String
+  details     String
+  status      String   @default("PENDING")
+  requestedBy String
+  createdAt   DateTime @default(now())
+  decidedAt   DateTime?
+
+  company     Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+model Invoice {
+  id          String   @id @default(cuid())
+  companyId   String
+  invoiceNo   String   @unique
+  description String
+  amountKes   Int
+  status      String   @default("DRAFT")
+  createdAt   DateTime @default(now())
+
+  company     Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+model IntegrationConnection {
+  id          String   @id @default(cuid())
+  companyId   String
+  provider    String
+  displayName String
+  status      String   @default("PLANNED")
+  scopes      String
+  connectedBy String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company     Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, provider])
+}

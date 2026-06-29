@@ -294,6 +294,7 @@ export async function uploadArtifactAction(formData: FormData) {
       title: file.name,
       kind: file.type || "file",
       storagePath,
+      fileSizeBytes: file.size,
       extractedText,
       memoryStatus: addToMemory ? "MEMORY_INDEXED" : "ARTIFACT_ONLY"
     }

@@ -57,7 +57,9 @@ export default async function ArtifactsPage() {
                 <div className="flex flex-col justify-between gap-3 md:flex-row">
                   <div>
                     <h2 className="font-semibold">{artifact.title}</h2>
-                    <p className="mt-1 text-sm text-graphite">{artifact.kind}</p>
+                    <p className="mt-1 text-sm text-graphite">
+                      {artifact.kind} · {artifact.fileSizeBytes ? formatBytes(artifact.fileSizeBytes) : "Size not tracked"}
+                    </p>
                   </div>
                   <Badge tone={artifact.memoryStatus === "MEMORY_INDEXED" ? "success" : "neutral"}>
                     {artifact.memoryStatus === "MEMORY_INDEXED" ? "Memory indexed" : "Artifact only"}
@@ -81,4 +83,12 @@ export default async function ArtifactsPage() {
       </div>
     </AppShell>
   );
+}
+
+function formatBytes(bytes: number) {
+  if (!bytes) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const value = bytes / 1024 ** exponent;
+  return `${value >= 10 || exponent === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[exponent]}`;
 }

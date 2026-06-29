@@ -162,6 +162,7 @@ model Artifact {
   title         String
   kind          String
   storagePath   String
+  fileSizeBytes Int      @default(0)
   extractedText String?
   memoryStatus  String   @default("ARTIFACT_ONLY")
   createdAt     DateTime @default(now())

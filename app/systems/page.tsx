@@ -23,6 +23,13 @@ export default async function SystemsPage() {
     companies,
     artifacts,
     memoryArtifacts,
+    storageTotals,
+    memoryStorageTotals,
+    untrackedStorageFiles,
+    companyStorageRows,
+    companyMemoryStorageRows,
+    companyUntrackedRows,
+    storageCompanies,
     pendingApprovals,
     pendingInvites,
     setupGaps,
@@ -47,6 +54,35 @@ export default async function SystemsPage() {
     prisma.company.count(),
     prisma.artifact.count(),
     prisma.artifact.count({ where: { memoryStatus: "MEMORY_INDEXED" } }),
+    prisma.artifact.aggregate({
+      _sum: { fileSizeBytes: true }
+    }),
+    prisma.artifact.aggregate({
+      where: { memoryStatus: "MEMORY_INDEXED" },
+      _sum: { fileSizeBytes: true }
+    }),
+    prisma.artifact.count({ where: { fileSizeBytes: 0 } }),
+    prisma.artifact.groupBy({
+      by: ["companyId"],
+      _count: { id: true },
+      _sum: { fileSizeBytes: true },
+      orderBy: { _sum: { fileSizeBytes: "desc" } }
+    }),
+    prisma.artifact.groupBy({
+      by: ["companyId"],
+      where: { memoryStatus: "MEMORY_INDEXED" },
+      _count: { id: true },
+      _sum: { fileSizeBytes: true }
+    }),
+    prisma.artifact.groupBy({
+      by: ["companyId"],
+      where: { fileSizeBytes: 0 },
+      _count: { id: true }
+    }),
+    prisma.company.findMany({
+      select: { id: true, name: true, slug: true },
+      orderBy: { name: "asc" }
+    }),
     prisma.approvalRequest.count({ where: { status: "PENDING" } }),
     prisma.teamInvite.count({
       where: {
@@ -78,12 +114,26 @@ export default async function SystemsPage() {
 
   const counts = new Map(jobCounts.map((item) => [item.status, item._count.status]));
   const onlineWorkers = workers.filter((worker) => now.getTime() - worker.lastSeenAt.getTime() < onlineWindowMs);
+  const trackedStorageBytes = storageTotals._sum.fileSizeBytes ?? 0;
+  const memoryStorageBytes = memoryStorageTotals._sum.fileSizeBytes ?? 0;
+  const companyNames = new Map(storageCompanies.map((company) => [company.id, company]));
+  const companyMemoryStorage = new Map(
+    companyMemoryStorageRows.map((row) => [
+      row.companyId,
+      {
+        files: row._count.id,
+        bytes: row._sum.fileSizeBytes ?? 0
+      }
+    ])
+  );
+  const companyUntrackedStorage = new Map(companyUntrackedRows.map((row) => [row.companyId, row._count.id]));
 
   const warnings = [
     setupGaps ? `${setupGaps} employee setup brief${setupGaps === 1 ? " needs" : "s need"} approval.` : null,
     profileGaps ? `${profileGaps} profile-isolated employee${profileGaps === 1 ? " is" : "s are"} missing a profile.` : null,
     staleJobs ? `${staleJobs} Hermes job${staleJobs === 1 ? " is" : "s are"} stuck in RUNNING.` : null,
     failedJobsToday ? `${failedJobsToday} job${failedJobsToday === 1 ? " has" : "s have"} failed in the last 24 hours.` : null,
+    untrackedStorageFiles ? `${untrackedStorageFiles} older file${untrackedStorageFiles === 1 ? " has" : "s have"} no recorded storage size yet.` : null,
     onlineWorkers.length ? null : "No local Hermes worker heartbeat is currently online."
   ].filter((warning): warning is string => Boolean(warning));
 
@@ -106,10 +156,11 @@ export default async function SystemsPage() {
         <Metric label="Companies" value={companies} />
         <Metric label="Documents" value={artifacts} />
         <Metric label="Memory files" value={memoryArtifacts} />
-        <Metric label="Pending approvals" tone={pendingApprovals ? "warning" : "neutral"} value={pendingApprovals} />
+        <Metric label="Tracked storage" value={formatBytes(trackedStorageBytes)} />
       </div>
 
       <div className="mt-6 grid gap-5 lg:grid-cols-[1fr_360px]">
+        <div className="space-y-5">
         <Card>
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-xl font-semibold">Recent client requests</h2>
@@ -155,6 +206,53 @@ export default async function SystemsPage() {
           )}
         </Card>
 
+        <Card>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-xl font-semibold">Storage by company</h2>
+            <Badge>{companyStorageRows.length} companies</Badge>
+          </div>
+          {companyStorageRows.length ? (
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full min-w-[720px] text-left text-sm">
+                <thead className="border-b border-black/10 text-xs uppercase tracking-[0.12em] text-graphite">
+                  <tr>
+                    <th className="py-3 pr-4">Company</th>
+                    <th className="py-3 pr-4">Files</th>
+                    <th className="py-3 pr-4">Tracked storage</th>
+                    <th className="py-3 pr-4">Memory files</th>
+                    <th className="py-3 pr-4">Memory storage</th>
+                    <th className="py-3 pr-4">Untracked</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-black/10">
+                  {companyStorageRows.map((row) => {
+                    const company = companyNames.get(row.companyId);
+                    const memory = companyMemoryStorage.get(row.companyId) ?? { files: 0, bytes: 0 };
+                    const untracked = companyUntrackedStorage.get(row.companyId) ?? 0;
+
+                    return (
+                      <tr key={row.companyId}>
+                        <td className="py-3 pr-4">
+                          <p className="font-semibold">{company?.name ?? row.companyId}</p>
+                          <p className="mt-1 text-xs text-graphite">{company?.slug ?? "unknown"}</p>
+                        </td>
+                        <td className="py-3 pr-4">{row._count.id}</td>
+                        <td className="py-3 pr-4">{formatBytes(row._sum.fileSizeBytes ?? 0)}</td>
+                        <td className="py-3 pr-4">{memory.files}</td>
+                        <td className="py-3 pr-4">{formatBytes(memory.bytes)}</td>
+                        <td className="py-3 pr-4">{untracked}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <EmptyState title="No storage yet" description="Uploaded company documents will appear here with per-company storage totals." />
+          )}
+        </Card>
+        </div>
+
         <div className="space-y-5">
           <Card>
             <h2 className="text-xl font-semibold">Workers</h2>
@@ -183,6 +281,16 @@ export default async function SystemsPage() {
           </Card>
 
           <Card>
+            <h2 className="text-xl font-semibold">Storage</h2>
+            <div className="mt-4 space-y-3 text-sm text-graphite">
+              <p>Total tracked: {formatBytes(trackedStorageBytes)}</p>
+              <p>Memory indexed: {formatBytes(memoryStorageBytes)}</p>
+              <p>Untracked older files: {untrackedStorageFiles}</p>
+              <p>Per-file limit: {formatBytes(10 * 1024 * 1024)}</p>
+            </div>
+          </Card>
+
+          <Card>
             <h2 className="text-xl font-semibold">Risk panel</h2>
             {warnings.length ? (
               <div className="mt-4 space-y-2">
@@ -203,6 +311,7 @@ export default async function SystemsPage() {
             <h2 className="text-xl font-semibold">Client intake</h2>
             <div className="mt-4 space-y-3 text-sm text-graphite">
               <p>Open invites: {pendingInvites}</p>
+              <p>Pending approvals: {pendingApprovals}</p>
               <p>Profile setup gaps: {setupGaps}</p>
               <p>Profile mapping gaps: {profileGaps}</p>
               <p>Failed jobs today: {failedJobsToday}</p>
@@ -249,4 +358,12 @@ function formatTime(date: Date) {
     timeStyle: "short",
     timeZone: "Africa/Nairobi"
   }).format(date);
+}
+
+function formatBytes(bytes: number) {
+  if (!bytes) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const value = bytes / 1024 ** exponent;
+  return `${value >= 10 || exponent === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[exponent]}`;
 }

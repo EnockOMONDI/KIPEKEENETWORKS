@@ -47,7 +47,7 @@ function inviteToken() {
 }
 
 function inviteExpiresAt() {
-  return new Date(Date.now() + 1000 * 60 * 60 * 24 * 7);
+  return new Date(Date.now() + 1000 * 60 * 60 * 24 * 5);
 }
 
 function safeInviteRole(role: string, user: { role: string; company: { slug: string } }) {
@@ -702,7 +702,7 @@ export async function acceptInviteAction(formData: FormData) {
     include: { company: true }
   });
 
-  if (!invite || invite.acceptedAt || invite.expiresAt < new Date()) {
+  if (!invite || invite.acceptedAt || invite.revokedAt || invite.expiresAt < new Date()) {
     redirect(`/invite/${token}?error=invalid`);
   }
 

@@ -4,6 +4,7 @@ import { createTeamInviteAction } from "@/lib/actions";
 import { inviteUrl as buildInviteUrl } from "@/lib/app-url";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { requestOrigin } from "@/lib/request-security";
 import { canManageTeam, roleLabel, roles } from "@/lib/roles";
 import { redirect } from "next/navigation";
 
@@ -14,6 +15,7 @@ export default async function TeamPage({
 }) {
   const user = await requireUser();
   const params = await searchParams;
+  const origin = await requestOrigin();
   if (!canManageTeam(user)) {
     redirect("/dashboard");
   }
@@ -27,7 +29,7 @@ export default async function TeamPage({
     orderBy: { createdAt: "desc" },
     take: 10
   });
-  const inviteUrl = params.invite ? buildInviteUrl(params.invite) : null;
+  const inviteUrl = params.invite ? buildInviteUrl(params.invite, origin) : null;
 
   return (
     <AppShell companyName={user.company.name} companySlug={user.company.slug} userEmail={user.email} userRole={user.role}>

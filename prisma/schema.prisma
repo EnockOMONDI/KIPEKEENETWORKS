@@ -58,6 +58,10 @@ model TeamInvite {
   invitedBy String
   expiresAt DateTime
   acceptedAt DateTime?
+  revokedAt DateTime?
+  openedAt DateTime?
+  lastOpenedAt DateTime?
+  openCount Int      @default(0)
   createdAt DateTime @default(now())
 
   company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)

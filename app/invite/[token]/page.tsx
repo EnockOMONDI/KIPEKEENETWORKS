@@ -5,6 +5,13 @@ import { prisma } from "@/lib/db";
 import { hashToken } from "@/lib/security";
 import { roleLabel } from "@/lib/roles";
 
+export const metadata = {
+  robots: {
+    follow: false,
+    index: false
+  }
+};
+
 export default async function InvitePage({
   params,
   searchParams
@@ -18,7 +25,24 @@ export default async function InvitePage({
     where: { tokenHash: hashToken(token) },
     include: { company: true }
   });
-  const invalid = !invite || invite.acceptedAt || invite.expiresAt < new Date();
+  if (invite && !invite.acceptedAt && !invite.revokedAt && invite.expiresAt >= new Date()) {
+    await prisma.teamInvite.update({
+      where: { id: invite.id },
+      data: {
+        lastOpenedAt: new Date(),
+        openedAt: invite.openedAt ?? new Date(),
+        openCount: { increment: 1 }
+      }
+    });
+  }
+  const invalid = !invite || invite.acceptedAt || invite.revokedAt || invite.expiresAt < new Date();
+  const status = invite?.acceptedAt
+    ? "already accepted"
+    : invite?.revokedAt
+      ? "revoked"
+      : invite && invite.expiresAt < new Date()
+        ? "expired"
+        : "invalid";
 
   return (
     <main className="grid min-h-screen place-items-center bg-paper px-5">
@@ -30,7 +54,7 @@ export default async function InvitePage({
           <h1 className="mt-2 text-3xl font-semibold">Accept invite</h1>
           {invalid ? (
             <div className="mt-5 rounded-md bg-red-50 px-3 py-3 text-sm leading-6 text-red-700">
-              This invite is invalid, expired, or already accepted. Ask your company admin for a new invite.
+              This invite is {status}. Ask your company admin for a new invite.
             </div>
           ) : (
             <>
@@ -46,6 +70,12 @@ export default async function InvitePage({
                 </p>
                 <p>
                   Role: <span className="font-semibold text-ink">{roleLabel(invite.role)}</span>
+                </p>
+                <p>
+                  Expires: <span className="font-semibold text-ink">{invite.expiresAt.toLocaleDateString()}</span>
+                </p>
+                <p>
+                  Opens: <span className="font-semibold text-ink">{invite.openCount + 1}</span>
                 </p>
               </div>
               {error ? (

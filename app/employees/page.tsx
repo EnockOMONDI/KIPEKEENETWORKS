@@ -1,6 +1,10 @@
 import { AppShell, Badge, Card, EmptyState, PageHeader } from "@/components/AppShell";
 import { SubmitButton } from "@/components/Interactive";
-import { createEmployeeAction } from "@/lib/actions";
+import {
+  approveEmployeeProfileSetupAction,
+  createEmployeeAction,
+  saveEmployeeProfileSetupAction
+} from "@/lib/actions";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { isolationLabel } from "@/lib/isolation";
@@ -23,6 +27,7 @@ export default async function EmployeesPage({
       include: {
         artifactAccess: true,
         loops: true,
+        profileSetup: true,
         sessions: true,
         template: true
       },
@@ -82,6 +87,22 @@ export default async function EmployeesPage({
               const lastSession = employee.sessions
                 .map((session) => session.createdAt)
                 .sort((a, b) => b.getTime() - a.getTime())[0];
+              const setup = employee.profileSetup;
+              const setupText =
+                setup?.draftSoul ??
+                [
+                  `You are ${employee.displayName}, a Kipekee Networks AI employee assigned to ${user.company.name}.`,
+                  "",
+                  "Purpose:",
+                  "- Help the company with practical business work in your role.",
+                  "- Learn from approved company documents, SOPs, policies, examples, and user instructions.",
+                  "- Ask clear follow-up questions when company context is missing.",
+                  "",
+                  "Behavior:",
+                  "- Keep answers concise first, then offer details or next actions.",
+                  "- Prepare drafts, plans, checklists, and recommendations.",
+                  "- Ask for approval before sensitive external actions."
+                ].join("\n");
 
               return (
                 <Card key={employee.id}>
@@ -108,8 +129,26 @@ export default async function EmployeesPage({
                       <div className="flex items-center justify-between gap-3 text-sm">
                         <span className="text-graphite">Execution</span>
                         <span className="max-w-44 truncate font-semibold">
-                          {employee.hermesProfile ?? (user.company.isolationTier === "SHARED" ? "Shared worker" : "Pending profile")}
+                          {employee.hermesProfile
+                            ? "Dedicated employee profile"
+                            : user.company.isolationTier === "SHARED"
+                              ? "Shared scoped execution"
+                              : "Pending setup"}
                         </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 text-sm">
+                        <span className="text-graphite">Setup</span>
+                        <Badge
+                          tone={
+                            setup?.status === "APPROVED"
+                              ? "success"
+                              : setup?.status === "PENDING_APPROVAL"
+                                ? "warning"
+                                : "neutral"
+                          }
+                        >
+                          {setup?.status?.replace("_", " ") ?? "DRAFT"}
+                        </Badge>
                       </div>
                       <div className="flex flex-wrap gap-2 pt-1">
                         <span className="inline-flex items-center gap-1 rounded-md bg-paper px-2.5 py-1 text-xs font-semibold text-graphite">
@@ -121,6 +160,45 @@ export default async function EmployeesPage({
                           Approval scoped
                         </span>
                       </div>
+                      {manager ? (
+                        <div className="rounded-md border border-black/10 bg-paper p-3">
+                          <p className="text-sm font-semibold">Employee setup brief</p>
+                          <p className="mt-1 text-xs leading-5 text-graphite">
+                            This is the approved personality, role, and learning instruction that the local worker syncs into the employee profile.
+                          </p>
+                          <form action={saveEmployeeProfileSetupAction} className="mt-3 space-y-2">
+                            <input name="employeeId" type="hidden" value={employee.id} />
+                            <textarea
+                              className="min-h-44 w-full rounded-md border border-black/10 bg-white px-3 py-2 text-sm leading-6 outline-none"
+                              name="draftSoul"
+                              defaultValue={setupText}
+                            />
+                            <div className="grid gap-2 sm:grid-cols-2">
+                              <button
+                                className="min-h-10 rounded-md border border-black/10 bg-white px-3 text-sm font-semibold text-ink"
+                                name="status"
+                                value="DRAFT"
+                              >
+                                Save draft
+                              </button>
+                              <button
+                                className="min-h-10 rounded-md bg-ink px-3 text-sm font-semibold text-paper"
+                                name="status"
+                                value="PENDING_APPROVAL"
+                              >
+                                Send for approval
+                              </button>
+                            </div>
+                          </form>
+                          <form action={approveEmployeeProfileSetupAction} className="mt-2">
+                            <input name="employeeId" type="hidden" value={employee.id} />
+                            <textarea className="hidden" name="draftSoul" readOnly value={setupText} />
+                            <button className="min-h-10 w-full rounded-md bg-forest px-3 text-sm font-semibold text-white">
+                              Approve setup
+                            </button>
+                          </form>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 </Card>

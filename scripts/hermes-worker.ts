@@ -48,6 +48,14 @@ async function processOne() {
   console.log(`[${workerId}] Running job ${job.id} for ${job.companyName} / ${job.employeeName}`);
 
   try {
+    const profileSetup = await prisma.employeeProfileSetup.findFirst({
+      where: {
+        companyId: job.companyId,
+        employeeId: job.employeeId,
+        status: "APPROVED"
+      }
+    });
+
     const result = await runHermesTask({
       companyId: job.companyId,
       companyName: job.companyName,
@@ -60,7 +68,8 @@ async function processOne() {
       prompt: job.prompt,
       allowedArtifactIds: parseJsonArray(job.allowedArtifactIds),
       allowedToolsets: parseJsonArray(job.allowedToolsets),
-      memoryContext: job.memoryContext ?? undefined
+      memoryContext: job.memoryContext ?? undefined,
+      profileSetupSoul: profileSetup?.approvedSoul ?? profileSetup?.draftSoul
     });
 
     await prisma.$transaction([

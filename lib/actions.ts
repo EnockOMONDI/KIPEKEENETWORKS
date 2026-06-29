@@ -64,6 +64,22 @@ function storageProvider() {
   return process.env.KIPEKEE_STORAGE_PROVIDER || "local";
 }
 
+function defaultEmployeeSoul(employeeName: string, companyName: string) {
+  return [
+    `You are ${employeeName}, a Kipekee Networks AI employee assigned to ${companyName}.`,
+    "",
+    "Purpose:",
+    "- Help the company with practical business work in your role.",
+    "- Learn from approved company documents, SOPs, policies, examples, and user instructions.",
+    "- Ask clear follow-up questions when company context is missing.",
+    "",
+    "Behavior:",
+    "- Keep answers concise first, then offer details or next actions.",
+    "- Prepare drafts, plans, checklists, and recommendations.",
+    "- Ask for approval before sensitive external actions."
+  ].join("\n");
+}
+
 export async function loginAction(formData: FormData) {
   await assertSameOrigin();
   const email = String(formData.get("email") ?? "");
@@ -95,12 +111,21 @@ export async function createEmployeeAction(formData: FormData) {
     requestedProfile ||
     (user.company.isolationTier === "PROFILE" ? hermesProfileName(namespace, displayName) : "");
 
-  await prisma.companyEmployee.create({
+  const employee = await prisma.companyEmployee.create({
     data: {
       companyId: user.companyId,
       templateId,
       displayName,
       hermesProfile: hermesProfile || null
+    }
+  });
+  await prisma.employeeProfileSetup.create({
+    data: {
+      companyId: user.companyId,
+      employeeId: employee.id,
+      status: "DRAFT",
+      draftSoul: defaultEmployeeSoul(displayName, user.company.name),
+      requestedBy: user.email
     }
   });
 
@@ -110,6 +135,108 @@ export async function createEmployeeAction(formData: FormData) {
       actor: user.email,
       action: "employee.created",
       target: displayName
+    }
+  });
+
+  revalidatePath("/employees");
+}
+
+export async function saveEmployeeProfileSetupAction(formData: FormData) {
+  await assertSameOrigin();
+  const user = await requireUser();
+  if (!canManageCompany(user)) {
+    redirect("/dashboard");
+  }
+
+  const employeeId = String(formData.get("employeeId") ?? "");
+  const draftSoul = String(formData.get("draftSoul") ?? "").trim();
+  const status = String(formData.get("status") ?? "DRAFT");
+  const safeStatus = status === "PENDING_APPROVAL" ? "PENDING_APPROVAL" : "DRAFT";
+
+  if (!employeeId || !draftSoul) {
+    redirect("/employees?setup=missing");
+  }
+
+  const employee = await prisma.companyEmployee.findFirstOrThrow({
+    where: { id: employeeId, companyId: user.companyId }
+  });
+
+  await prisma.employeeProfileSetup.upsert({
+    where: { employeeId },
+    update: {
+      draftSoul,
+      status: safeStatus,
+      requestedBy: user.email,
+      approvedSoul: safeStatus === "DRAFT" ? null : undefined,
+      approvedAt: safeStatus === "DRAFT" ? null : undefined,
+      approvedBy: safeStatus === "DRAFT" ? null : undefined
+    },
+    create: {
+      companyId: user.companyId,
+      employeeId,
+      status: safeStatus,
+      draftSoul,
+      requestedBy: user.email
+    }
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      companyId: user.companyId,
+      actor: user.email,
+      action: "employee.profile_setup.saved",
+      target: employee.displayName,
+      metadata: JSON.stringify({ status: safeStatus })
+    }
+  });
+
+  revalidatePath("/employees");
+}
+
+export async function approveEmployeeProfileSetupAction(formData: FormData) {
+  await assertSameOrigin();
+  const user = await requireUser();
+  if (!canManageCompany(user)) {
+    redirect("/dashboard");
+  }
+
+  const employeeId = String(formData.get("employeeId") ?? "");
+  const draftSoul = String(formData.get("draftSoul") ?? "").trim();
+  if (!employeeId || !draftSoul) {
+    redirect("/employees?setup=missing");
+  }
+
+  const employee = await prisma.companyEmployee.findFirstOrThrow({
+    where: { id: employeeId, companyId: user.companyId }
+  });
+
+  await prisma.employeeProfileSetup.upsert({
+    where: { employeeId },
+    update: {
+      draftSoul,
+      approvedSoul: draftSoul,
+      status: "APPROVED",
+      approvedBy: user.email,
+      approvedAt: new Date()
+    },
+    create: {
+      companyId: user.companyId,
+      employeeId,
+      status: "APPROVED",
+      draftSoul,
+      approvedSoul: draftSoul,
+      requestedBy: user.email,
+      approvedBy: user.email,
+      approvedAt: new Date()
+    }
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      companyId: user.companyId,
+      actor: user.email,
+      action: "employee.profile_setup.approved",
+      target: employee.displayName
     }
   });
 
@@ -436,7 +563,7 @@ export async function createCompanyAction(formData: FormData) {
     redirect("/dashboard");
   }
   const packageId = String(formData.get("packageId"));
-  const isolationTier = String(formData.get("isolationTier") || "SHARED");
+  const isolationTier = String(formData.get("isolationTier") || "PROFILE");
   const companyName = String(formData.get("companyName")).trim();
   const ownerName = String(formData.get("ownerName") ?? "").trim();
   const ownerEmail = String(formData.get("ownerEmail") ?? "").trim().toLowerCase();
@@ -524,12 +651,22 @@ export async function createCompanyAction(formData: FormData) {
         continue;
       }
 
-      await tx.companyEmployee.create({
+      const employee = await tx.companyEmployee.create({
         data: {
           companyId: company.id,
           templateId: template.id,
           displayName: templateName,
           hermesProfile: isolationTier === "PROFILE" ? hermesProfileName(namespace, templateName) : null
+        }
+      });
+
+      await tx.employeeProfileSetup.create({
+        data: {
+          companyId: company.id,
+          employeeId: employee.id,
+          status: "DRAFT",
+          draftSoul: defaultEmployeeSoul(templateName, company.name),
+          requestedBy: user.email
         }
       });
     }

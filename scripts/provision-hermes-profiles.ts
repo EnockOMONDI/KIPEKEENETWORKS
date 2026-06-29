@@ -1,5 +1,6 @@
 import { execFileSync } from "child_process";
-import { existsSync, mkdirSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import os from "os";
 import path from "path";
 import { prisma } from "../lib/db";
 import { companyNamespace, hermesProfileName } from "../lib/isolation";
@@ -8,6 +9,7 @@ const hermesBin = process.env.HERMES_BIN || "/Users/djsean/.local/bin/hermes";
 const hermesRoot = "/Users/djsean/.hermes";
 const profilesDir = path.join(hermesRoot, "profiles");
 const sharedProfile = process.env.KIPEKEE_SHARED_HERMES_PROFILE || "kipekeenetworksworker";
+const runtimeDir = process.env.KIPEKEE_HERMES_RUNTIME_DIR || path.join(os.tmpdir(), "kipekee-hermes-runtime");
 
 function profileDir(profile: string) {
   return path.join(profilesDir, profile);
@@ -35,6 +37,36 @@ function writeSoul(profile: string, content: string) {
   writeFileSync(path.join(profileDir(profile), "SOUL.md"), `${content.trim()}\n`);
 }
 
+function hardenClientProfile(profile: string) {
+  const configPath = path.join(profileDir(profile), "config.yaml");
+  if (!existsSync(configPath)) {
+    return;
+  }
+
+  let config = readFileSync(configPath, "utf8");
+  config = config.replace(/toolsets:\n(?:  - .+\n)+/m, "toolsets:\n  - web\n");
+  config = config.replace(/disabled_toolsets:\s*\[\]/, "disabled_toolsets:\n  - hermes-cli");
+  config = config.replace(/backend:\s*local/, "backend: local");
+  config = config.replace(/cwd:\s*.+/, `cwd: ${runtimeDir}`);
+  config = config.replace(/persistent_shell:\s*true/, "persistent_shell: false");
+  writeFileSync(configPath, config);
+}
+
+function employeeSoul(employeeName: string, companyName: string, approvedSoul?: string | null) {
+  return `
+# ${employeeName} - ${companyName}
+
+${approvedSoul?.trim() || `You are ${employeeName}, a Kipekee Networks AI employee assigned to ${companyName}.`}
+
+Rules:
+- Work only for ${companyName}.
+- Do not reveal internal infrastructure, repositories, branches, git state, deployment details, databases, local files, profile names, tenant metadata, worker state, or internal IDs.
+- Use only approved company memory and artifacts passed to you.
+- Ask for the missing document, SOP, policy, example, or permission when company context is insufficient.
+- Prepare sensitive business actions for approval before execution.
+`;
+}
+
 async function main() {
   ensureProfile(
     sharedProfile,
@@ -55,10 +87,11 @@ Rules:
 - Keep responses practical for African businesses and Kipekee Networks clients.
 `
   );
+  hardenClientProfile(sharedProfile);
 
   const companies = await prisma.company.findMany({
     where: { isolationTier: "PROFILE" },
-    include: { employees: true }
+    include: { employees: { include: { profileSetup: true } } }
   });
 
   for (const company of companies) {
@@ -74,22 +107,8 @@ Rules:
     for (const employee of company.employees) {
       const profile = employee.hermesProfile ?? hermesProfileName(namespace, employee.displayName);
       ensureProfile(profile, `${employee.displayName} for ${company.name} in Kipekee Networks.`);
-      writeSoul(
-        profile,
-        `
-# ${employee.displayName} - ${company.name}
-
-You are ${employee.displayName}, a Kipekee Networks AI employee assigned to ${company.name}.
-
-Rules:
-- You work only for ${company.name}.
-- Hermes is hidden infrastructure; never present yourself as Hermes.
-- Use only the company-scoped memory and artifacts passed to you.
-- Do not access, mention, or infer information from any other client.
-- Prepare sensitive business actions for approval before execution.
-- When the company context is insufficient, say exactly what document, SOP, policy, or permission is missing.
-`
-      );
+      writeSoul(profile, employeeSoul(employee.displayName, company.name, employee.profileSetup?.approvedSoul));
+      hardenClientProfile(profile);
 
       if (!employee.hermesProfile) {
         await prisma.companyEmployee.update({

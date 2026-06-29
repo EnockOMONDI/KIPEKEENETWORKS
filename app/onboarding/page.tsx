@@ -51,7 +51,7 @@ export default async function OnboardingPage({
                 </option>
               ))}
             </select>
-            <select className="w-full rounded-md border border-black/10 px-3 py-2" name="isolationTier" defaultValue="SHARED">
+            <select className="w-full rounded-md border border-black/10 px-3 py-2" name="isolationTier" defaultValue="PROFILE">
               {isolationTiers.map((tier) => (
                 <option key={tier.value} value={tier.value}>
                   {tier.label}

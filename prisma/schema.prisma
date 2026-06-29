@@ -22,6 +22,7 @@ model Company {
   users       User[]
   invites     TeamInvite[]
   employees   CompanyEmployee[]
+  profileSetups EmployeeProfileSetup[]
   artifacts   Artifact[]
   sessions    Session[]
   hermesJobs  HermesJob[]
@@ -132,6 +133,26 @@ model CompanyEmployee {
   sessions        Session[]
   loops           BusinessLoop[]
   hermesJobs      HermesJob[]
+  profileSetup    EmployeeProfileSetup?
+}
+
+model EmployeeProfileSetup {
+  id            String   @id @default(cuid())
+  companyId     String
+  employeeId    String   @unique
+  status        String   @default("DRAFT")
+  draftSoul     String
+  approvedSoul  String?
+  requestedBy   String?
+  approvedBy    String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  approvedAt    DateTime?
+
+  company       Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee      CompanyEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, status])
 }
 
 model Artifact {

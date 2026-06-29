@@ -15,6 +15,7 @@ const links = [
   { href: "/loops", label: "Activity", icon: "CalendarClock", audience: "manager" },
   { href: "/team", label: "Team", icon: "Users", audience: "manager" },
   { href: "/billing", label: "Billing", icon: "CreditCard", audience: "billing" },
+  { href: "/systems", label: "Systems", icon: "Activity", audience: "kipekee" },
   { href: "/onboarding", label: "Client Onboarding", icon: "UserPlus", audience: "kipekee" }
 ] as const;
 

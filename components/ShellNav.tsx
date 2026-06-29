@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  Activity,
   Bot,
   CalendarClock,
   CircleHelp,
@@ -18,6 +19,7 @@ import {
 } from "lucide-react";
 
 const icons = {
+  Activity,
   Bot,
   CalendarClock,
   CircleHelp,

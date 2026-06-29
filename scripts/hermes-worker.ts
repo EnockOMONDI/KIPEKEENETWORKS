@@ -5,6 +5,34 @@ const workerId = process.env.KIPEKEE_WORKER_ID || `worker-${process.pid}`;
 const pollIntervalMs = Number(process.env.KIPEKEE_WORKER_POLL_MS || 3000);
 const once = process.argv.includes("--once");
 
+async function writeHeartbeat(currentJobId?: string | null) {
+  await prisma.workerHeartbeat.upsert({
+    where: { workerId },
+    update: {
+      runtime: process.env.KIPEKEE_WORKER_RUNTIME || "local",
+      status: "ONLINE",
+      currentJobId,
+      lastSeenAt: new Date(),
+      metadata: JSON.stringify({
+        pid: process.pid,
+        mode: process.env.KIPEKEE_HERMES_MODE || "mock",
+        pollIntervalMs
+      })
+    },
+    create: {
+      workerId,
+      runtime: process.env.KIPEKEE_WORKER_RUNTIME || "local",
+      status: "ONLINE",
+      currentJobId,
+      metadata: JSON.stringify({
+        pid: process.pid,
+        mode: process.env.KIPEKEE_HERMES_MODE || "mock",
+        pollIntervalMs
+      })
+    }
+  });
+}
+
 function parseJsonArray(value: string) {
   try {
     const parsed = JSON.parse(value);
@@ -48,6 +76,7 @@ async function processOne() {
   console.log(`[${workerId}] Running job ${job.id} for ${job.companyName} / ${job.employeeName}`);
 
   try {
+    await writeHeartbeat(job.id);
     const profileSetup = await prisma.employeeProfileSetup.findFirst({
       where: {
         companyId: job.companyId,
@@ -100,6 +129,7 @@ async function processOne() {
       })
     ]);
 
+    await writeHeartbeat(null);
     console.log(`[${workerId}] Completed job ${job.id}`);
     return true;
   } catch (error) {
@@ -112,6 +142,7 @@ async function processOne() {
         completedAt: new Date()
       }
     });
+    await writeHeartbeat(null);
     console.error(`[${workerId}] Failed job ${job.id}: ${message}`);
     return true;
   }
@@ -119,6 +150,7 @@ async function processOne() {
 
 async function main() {
   console.log(`[${workerId}] Hermes worker started. Poll interval: ${pollIntervalMs}ms`);
+  await writeHeartbeat(null);
 
   do {
     const didWork = await processOne();
@@ -126,6 +158,7 @@ async function main() {
       break;
     }
     if (!didWork) {
+      await writeHeartbeat(null);
       await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
     }
   } while (true);

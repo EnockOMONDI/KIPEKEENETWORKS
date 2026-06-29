@@ -240,6 +240,20 @@ model HermesJob {
   session            Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 }
 
+model WorkerHeartbeat {
+  id           String   @id @default(cuid())
+  workerId     String   @unique
+  runtime      String   @default("local")
+  status       String   @default("ONLINE")
+  currentJobId String?
+  lastSeenAt   DateTime @default(now())
+  metadata     String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([status, lastSeenAt])
+}
+
 model BusinessLoop {
   id          String   @id @default(cuid())
   companyId   String

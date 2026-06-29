@@ -9,6 +9,7 @@ import {
   ShieldCheck,
   Users
 } from "lucide-react";
+import Link from "next/link";
 import { onboardingPackages } from "@/lib/seed-data";
 
 const workforce = [
@@ -66,9 +67,12 @@ export default function Home() {
             <span className="rounded-md border border-black/10 bg-white px-3 py-2">
               Hermes hidden orchestration
             </span>
-            <span className="rounded-md bg-forest px-3 py-2 font-medium text-white">
-              Client #1: Kipekee Studio
-            </span>
+            <Link className="rounded-md border border-black/10 bg-white px-3 py-2 font-semibold text-ink" href="/login">
+              Sign in
+            </Link>
+            <Link className="rounded-md bg-forest px-3 py-2 font-semibold text-white" href="/dashboard">
+              Dashboard
+            </Link>
           </div>
         </div>
       </header>
@@ -87,6 +91,14 @@ export default function Home() {
             prompts, or model access. Companies get private workspaces with AI employees,
             document memory, sessions, loops, approvals, and controlled access.
           </p>
+          <div className="mt-7 flex flex-wrap gap-3">
+            <Link className="rounded-md bg-ink px-5 py-3 text-sm font-semibold text-paper" href="/login">
+              Sign in to workspace
+            </Link>
+            <Link className="rounded-md border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-ink" href="/dashboard">
+              Open dashboard
+            </Link>
+          </div>
           <div className="mt-8 grid gap-3 sm:grid-cols-3">
             <Metric label="Monthly user subscription" value="KES 4,500" />
             <Metric label="Starter onboarding" value="KES 5,000" />

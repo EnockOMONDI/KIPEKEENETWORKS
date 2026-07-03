@@ -1,5 +1,7 @@
 import { prisma } from "../lib/db";
 import { runHermesTask } from "../lib/hermes";
+import { verifyHermesJobSignature } from "../lib/hermes-job-signing";
+import { buildMemoryContextFromArtifacts } from "../lib/memory-context";
 
 const workerId = process.env.KIPEKEE_WORKER_ID || `worker-${process.pid}`;
 const pollIntervalMs = Number(process.env.KIPEKEE_WORKER_POLL_MS || 3000);
@@ -53,8 +55,8 @@ async function claimJob() {
   }
 
   try {
-    return await prisma.hermesJob.update({
-      where: { id: job.id },
+    const claimed = await prisma.hermesJob.updateMany({
+      where: { id: job.id, status: "PENDING" },
       data: {
         status: "RUNNING",
         lockedAt: new Date(),
@@ -62,9 +64,37 @@ async function claimJob() {
         attempts: { increment: 1 }
       }
     });
+
+    if (claimed.count !== 1) {
+      return null;
+    }
+
+    return await prisma.hermesJob.findUnique({ where: { id: job.id } });
   } catch {
     return null;
   }
+}
+
+async function failJob(jobId: string, companyId: string, reason: string) {
+  await prisma.$transaction([
+    prisma.hermesJob.update({
+      where: { id: jobId },
+      data: {
+        status: "FAILED",
+        error: reason,
+        completedAt: new Date()
+      }
+    }),
+    prisma.auditLog.create({
+      data: {
+        companyId,
+        actor: workerId,
+        action: "hermes.job.rejected",
+        target: jobId,
+        metadata: JSON.stringify({ reason })
+      }
+    })
+  ]);
 }
 
 async function processOne() {
@@ -73,10 +103,66 @@ async function processOne() {
     return false;
   }
 
-  console.log(`[${workerId}] Running job ${job.id} for ${job.companyName} / ${job.employeeName}`);
+  console.log(`[${workerId}] Running job ${job.id}`);
 
   try {
     await writeHeartbeat(job.id);
+    const signatureOk = verifyHermesJobSignature(
+      {
+        companyId: job.companyId,
+        employeeId: job.employeeId,
+        sessionId: job.sessionId,
+        prompt: job.prompt,
+        employeeName: job.employeeName,
+        hermesProfile: job.hermesProfile,
+        companyName: job.companyName,
+        isolationTier: job.isolationTier,
+        hermesNamespace: job.hermesNamespace,
+        allowedArtifactIds: job.allowedArtifactIds,
+        allowedToolsets: job.allowedToolsets,
+        memoryContext: job.memoryContext
+      },
+      job.jobSignature
+    );
+
+    if (!signatureOk) {
+      await failJob(job.id, job.companyId, "Invalid Hermes job signature.");
+      await writeHeartbeat(null);
+      return true;
+    }
+
+    const canonical = await prisma.companyEmployee.findFirst({
+      where: {
+        id: job.employeeId,
+        companyId: job.companyId,
+        sessions: {
+          some: {
+            id: job.sessionId,
+            companyId: job.companyId
+          }
+        }
+      },
+      include: {
+        company: true,
+        artifactAccess: {
+          where: { canUseAsMemory: true },
+          include: { artifact: true }
+        }
+      }
+    });
+
+    if (!canonical) {
+      await failJob(job.id, job.companyId, "Hermes job failed tenant ownership validation.");
+      await writeHeartbeat(null);
+      return true;
+    }
+
+    if ((job.hermesProfile ?? null) !== (canonical.hermesProfile ?? null)) {
+      await failJob(job.id, job.companyId, "Hermes job profile does not match employee profile.");
+      await writeHeartbeat(null);
+      return true;
+    }
+
     const profileSetup = await prisma.employeeProfileSetup.findFirst({
       where: {
         companyId: job.companyId,
@@ -86,18 +172,18 @@ async function processOne() {
     });
 
     const result = await runHermesTask({
-      companyId: job.companyId,
-      companyName: job.companyName,
-      isolationTier: job.isolationTier,
-      hermesNamespace: job.hermesNamespace,
-      agentId: job.employeeId,
+      companyId: canonical.companyId,
+      companyName: canonical.company.name,
+      isolationTier: canonical.company.isolationTier,
+      hermesNamespace: canonical.company.hermesNamespace,
+      agentId: canonical.id,
       sessionId: job.sessionId,
-      employeeName: job.employeeName,
-      hermesProfile: job.hermesProfile,
+      employeeName: canonical.displayName,
+      hermesProfile: canonical.hermesProfile,
       prompt: job.prompt,
-      allowedArtifactIds: parseJsonArray(job.allowedArtifactIds),
+      allowedArtifactIds: canonical.artifactAccess.map((item) => item.artifactId),
       allowedToolsets: parseJsonArray(job.allowedToolsets),
-      memoryContext: job.memoryContext ?? undefined,
+      memoryContext: buildMemoryContextFromArtifacts(canonical.artifactAccess.map((item) => item.artifact)),
       profileSetupSoul: profileSetup?.approvedSoul ?? profileSetup?.draftSoul
     });
 
@@ -123,7 +209,7 @@ async function processOne() {
           companyId: job.companyId,
           actor: workerId,
           action: "hermes.job.completed",
-          target: job.employeeName,
+          target: canonical.displayName,
           metadata: JSON.stringify({ jobId: job.id, metadata: result.metadata })
         }
       })

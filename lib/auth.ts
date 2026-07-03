@@ -2,42 +2,23 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { randomBytes } from "crypto";
 import { prisma } from "./db";
+import { clearRateLimit, enforceRateLimit, RateLimitError } from "./rate-limit";
 import { hashToken, verifyPassword } from "./security";
 
 const sessionCookieName = "kipekee_session";
-const loginWindowMs = 15 * 60 * 1000;
-const maxLoginAttempts = 8;
-const loginAttempts = new Map<string, { count: number; resetAt: number }>();
-
-function rateLimitKey(email: string) {
-  return email.trim().toLowerCase();
-}
-
-function isRateLimited(email: string) {
-  const key = rateLimitKey(email);
-  const now = Date.now();
-  const attempt = loginAttempts.get(key);
-
-  if (!attempt || attempt.resetAt <= now) {
-    loginAttempts.set(key, { count: 1, resetAt: now + loginWindowMs });
-    return false;
-  }
-
-  attempt.count += 1;
-  return attempt.count > maxLoginAttempts;
-}
-
-function clearRateLimit(email: string) {
-  loginAttempts.delete(rateLimitKey(email));
-}
 
 export async function login(email: string, password: string) {
   const normalizedEmail = email.trim().toLowerCase();
-  if (isRateLimited(normalizedEmail)) {
-    return { ok: false, error: "Too many login attempts." };
+  try {
+    await enforceRateLimit("login", [`email:${normalizedEmail}`]);
+  } catch (error) {
+    if (error instanceof RateLimitError) {
+      return { ok: false, error: "Too many login attempts." };
+    }
+    throw error;
   }
 
-  const user = await prisma.user.findFirst({
+  const user = await prisma.user.findUnique({
     where: { email: normalizedEmail },
     include: { company: true }
   });
@@ -45,7 +26,8 @@ export async function login(email: string, password: string) {
   if (!user || !verifyPassword(password, user.passwordHash)) {
     return { ok: false, error: "Invalid email or password." };
   }
-  clearRateLimit(normalizedEmail);
+
+  await clearRateLimit("login", [`email:${normalizedEmail}`]);
 
   const token = randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 14);

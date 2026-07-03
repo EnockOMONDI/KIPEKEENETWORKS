@@ -1,17 +1,20 @@
 "use server";
 
-import { mkdir, writeFile } from "fs/promises";
 import { randomBytes, randomUUID } from "crypto";
-import path from "path";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { prisma } from "./db";
 import { login, logout, requireUser } from "./auth";
 import { employeeTemplates } from "./seed-data";
-import { companyNamespace, hermesHomePath, hermesProfileName } from "./isolation";
+import { companyNamespace, hermesHomePath, hermesProfileName, safeIsolationTier } from "./isolation";
 import { hashPassword, hashToken } from "./security";
 import { canManageBilling, canManageCompany, canManageTeam, isKipekeeAdmin, roles } from "./roles";
 import { assertSameOrigin, assertValidEmail } from "./request-security";
+import { signHermesJob } from "./hermes-job-signing";
+import { setInviteFlash } from "./invite-flash";
+import { buildMemoryContextFromArtifacts } from "./memory-context";
+import { enforceRateLimit, RateLimitAction, RateLimitError } from "./rate-limit";
+import { storeArtifactObject } from "./storage";
 
 const maxUploadBytes = 10 * 1024 * 1024;
 const allowedUploadTypes = new Set([
@@ -22,6 +25,14 @@ const allowedUploadTypes = new Set([
   "text/csv",
   "text/markdown",
   "text/plain"
+]);
+const allowedIntegrationProviders = new Set([
+  "whatsapp",
+  "gmail",
+  "outlook",
+  "google-drive",
+  "google-calendar",
+  "crm"
 ]);
 
 function id(prefix: string) {
@@ -50,6 +61,21 @@ function inviteExpiresAt() {
   return new Date(Date.now() + 1000 * 60 * 60 * 24 * 5);
 }
 
+function inviteMaxOpenCount() {
+  return Number(process.env.KIPEKEE_INVITE_MAX_OPENS || 10);
+}
+
+async function enforceRateLimitOrRedirect(action: RateLimitAction, subjects: string[], redirectTo: string) {
+  try {
+    await enforceRateLimit(action, subjects);
+  } catch (error) {
+    if (error instanceof RateLimitError) {
+      redirect(`${redirectTo}${redirectTo.includes("?") ? "&" : "?"}error=rate-limit`);
+    }
+    throw error;
+  }
+}
+
 function safeInviteRole(role: string, user: { role: string; company: { slug: string } }) {
   const allowedRoles: string[] = [roles.CLIENT_OWNER, roles.CLIENT_ADMIN, roles.CLIENT_MEMBER, roles.ADMIN, roles.MEMBER];
   const safeRole = allowedRoles.includes(role) ? role : roles.CLIENT_MEMBER;
@@ -58,10 +84,6 @@ function safeInviteRole(role: string, user: { role: string; company: { slug: str
   }
 
   return safeRole;
-}
-
-function storageProvider() {
-  return process.env.KIPEKEE_STORAGE_PROVIDER || "local";
 }
 
 function defaultEmployeeSoul(employeeName: string, companyName: string) {
@@ -78,6 +100,26 @@ function defaultEmployeeSoul(employeeName: string, companyName: string) {
     "- Prepare drafts, plans, checklists, and recommendations.",
     "- Ask for approval before sensitive external actions."
   ].join("\n");
+}
+
+function signedHermesJobData(data: {
+  companyId: string;
+  employeeId: string;
+  sessionId: string;
+  prompt: string;
+  employeeName: string;
+  hermesProfile?: string | null;
+  companyName: string;
+  isolationTier: string;
+  hermesNamespace?: string | null;
+  allowedArtifactIds: string;
+  allowedToolsets: string;
+  memoryContext?: string | null;
+}) {
+  return {
+    ...data,
+    jobSignature: signHermesJob(data)
+  };
 }
 
 export async function loginAction(formData: FormData) {
@@ -103,9 +145,10 @@ export async function createEmployeeAction(formData: FormData) {
   if (!canManageCompany(user)) {
     redirect("/dashboard");
   }
+  await enforceRateLimitOrRedirect("employee_create", [`company:${user.companyId}`, `user:${user.id}`], "/employees");
   const templateId = String(formData.get("templateId") ?? "");
   const displayName = String(formData.get("displayName") ?? "").trim();
-  const requestedProfile = String(formData.get("hermesProfile") ?? "").trim();
+  const requestedProfile = isKipekeeAdmin(user) ? String(formData.get("hermesProfile") ?? "").trim() : "";
   const namespace = user.company.hermesNamespace ?? companyNamespace(user.company.slug);
   const hermesProfile =
     requestedProfile ||
@@ -147,6 +190,7 @@ export async function saveEmployeeProfileSetupAction(formData: FormData) {
   if (!canManageCompany(user)) {
     redirect("/dashboard");
   }
+  await enforceRateLimitOrRedirect("employee_profile_save", [`company:${user.companyId}`, `user:${user.id}`], "/employees");
 
   const employeeId = String(formData.get("employeeId") ?? "");
   const draftSoul = String(formData.get("draftSoul") ?? "").trim();
@@ -199,6 +243,7 @@ export async function approveEmployeeProfileSetupAction(formData: FormData) {
   if (!canManageCompany(user)) {
     redirect("/dashboard");
   }
+  await enforceRateLimitOrRedirect("employee_profile_approve", [`company:${user.companyId}`, `user:${user.id}`], "/employees");
 
   const employeeId = String(formData.get("employeeId") ?? "");
   const draftSoul = String(formData.get("draftSoul") ?? "").trim();
@@ -246,6 +291,7 @@ export async function approveEmployeeProfileSetupAction(formData: FormData) {
 export async function uploadArtifactAction(formData: FormData) {
   await assertSameOrigin();
   const user = await requireUser();
+  await enforceRateLimitOrRedirect("artifact_upload", [`company:${user.companyId}`, `user:${user.id}`], "/artifacts");
   const file = formData.get("file");
   const addToMemory = formData.get("addToMemory") === "on";
   const employees = formData.getAll("employeeIds").map(String);
@@ -259,9 +305,6 @@ export async function uploadArtifactAction(formData: FormData) {
   if (file.type && !allowedUploadTypes.has(file.type) && !file.name.endsWith(".md")) {
     redirect("/artifacts?error=file-type");
   }
-  if (storageProvider() === "local" && process.env.NODE_ENV === "production") {
-    redirect("/artifacts?error=storage");
-  }
   const allowedEmployees = employees.length
     ? await prisma.companyEmployee.findMany({
         where: {
@@ -273,27 +316,35 @@ export async function uploadArtifactAction(formData: FormData) {
     : [];
   const allowedEmployeeIds = new Set(allowedEmployees.map((employee) => employee.id));
 
-  const companyDir = path.join(process.cwd(), "uploads", user.company.slug);
-  await mkdir(companyDir, { recursive: true });
-
+  const artifactId = id("artifact");
   const bytes = Buffer.from(await file.arrayBuffer());
-  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
-  const storedName = `${Date.now()}-${safeName}`;
-  const storagePath = path.join(companyDir, storedName);
-  await writeFile(storagePath, bytes);
+  const stored = await storeArtifactObject({
+    artifactId,
+    bytes,
+    companyId: user.companyId,
+    companySlug: user.company.slug,
+    contentType: file.type || "application/octet-stream",
+    fileName: file.name
+  }).catch(() => null);
+
+  if (!stored) {
+    redirect("/artifacts?error=storage");
+  }
 
   const extractedText =
-    file.type.startsWith("text/") || safeName.endsWith(".md")
+    file.type.startsWith("text/") || file.name.endsWith(".md")
       ? bytes.toString("utf8").slice(0, 25000)
       : null;
 
   const artifact = await prisma.artifact.create({
     data: {
+      id: artifactId,
       companyId: user.companyId,
       uploadedBy: user.email,
       title: file.name,
       kind: file.type || "file",
-      storagePath,
+      storagePath: stored.storagePath,
+      storageProvider: stored.storageProvider,
       fileSizeBytes: file.size,
       extractedText,
       memoryStatus: addToMemory ? "MEMORY_INDEXED" : "ARTIFACT_ONLY"
@@ -333,6 +384,7 @@ export async function chatAction(formData: FormData) {
   if (!employeeId || !prompt) {
     redirect("/chat");
   }
+  await enforceRateLimitOrRedirect("chat_create", [`company:${user.companyId}`, `user:${user.id}`, `employee:${employeeId}`], "/chat");
 
   const employee = await prisma.companyEmployee.findFirstOrThrow({
     where: { id: employeeId, companyId: user.companyId }
@@ -374,16 +426,7 @@ export async function chatAction(formData: FormData) {
     include: { artifact: true }
   });
 
-  const memoryContext = access
-    .map((item) => {
-      const text = item.artifact.extractedText?.trim();
-      if (!text) {
-        return null;
-      }
-      return `Artifact: ${item.artifact.title}\n${text.slice(0, 6000)}`;
-    })
-    .filter(Boolean)
-    .join("\n\n---\n\n");
+  const memoryContext = buildMemoryContextFromArtifacts(access.map((item) => item.artifact));
 
   const task = {
     companyId: user.companyId,
@@ -400,8 +443,7 @@ export async function chatAction(formData: FormData) {
     memoryContext
   };
 
-  const job = await prisma.hermesJob.create({
-    data: {
+  const jobData = signedHermesJobData({
       companyId: task.companyId,
       employeeId: task.agentId,
       sessionId: task.sessionId,
@@ -413,7 +455,12 @@ export async function chatAction(formData: FormData) {
       hermesNamespace: task.hermesNamespace,
       allowedArtifactIds: JSON.stringify(task.allowedArtifactIds),
       allowedToolsets: JSON.stringify(task.allowedToolsets),
-      memoryContext: task.memoryContext,
+      memoryContext: task.memoryContext
+  });
+
+  const job = await prisma.hermesJob.create({
+    data: {
+      ...jobData,
       status: "PENDING"
     }
   });
@@ -438,6 +485,7 @@ export async function runLoopNowAction(formData: FormData) {
   if (!canManageCompany(user)) {
     redirect("/dashboard");
   }
+  await enforceRateLimitOrRedirect("loop_run", [`company:${user.companyId}`, `user:${user.id}`], "/loops");
   const loopId = String(formData.get("loopId"));
 
   const loop = await prisma.businessLoop.findFirstOrThrow({
@@ -450,16 +498,7 @@ export async function runLoopNowAction(formData: FormData) {
     include: { artifact: true }
   });
 
-  const memoryContext = access
-    .map((item) => {
-      const text = item.artifact.extractedText?.trim();
-      if (!text) {
-        return null;
-      }
-      return `Artifact: ${item.artifact.title}\n${text.slice(0, 6000)}`;
-    })
-    .filter(Boolean)
-    .join("\n\n---\n\n");
+  const memoryContext = buildMemoryContextFromArtifacts(access.map((item) => item.artifact));
 
   const session = await prisma.session.create({
     data: {
@@ -468,8 +507,7 @@ export async function runLoopNowAction(formData: FormData) {
       title: `Loop: ${loop.name}`
     }
   });
-  await prisma.hermesJob.create({
-    data: {
+  const jobData = signedHermesJobData({
       companyId: user.companyId,
       employeeId: loop.employeeId,
       sessionId: session.id,
@@ -481,7 +519,12 @@ export async function runLoopNowAction(formData: FormData) {
       hermesNamespace: user.company.hermesNamespace,
       allowedArtifactIds: JSON.stringify(access.map((item) => item.artifactId)),
       allowedToolsets: JSON.stringify(["chat", "documents", "memory", "audit"]),
-      memoryContext,
+      memoryContext
+  });
+
+  await prisma.hermesJob.create({
+    data: {
+      ...jobData,
       status: "PENDING"
     }
   });
@@ -507,6 +550,7 @@ export async function createLoopAction(formData: FormData) {
   if (!canManageCompany(user)) {
     redirect("/dashboard");
   }
+  await enforceRateLimitOrRedirect("loop_run", [`company:${user.companyId}`, `user:${user.id}`, "create"], "/loops");
   const employeeId = String(formData.get("employeeId"));
   const employee = await prisma.companyEmployee.findFirst({
     where: { id: employeeId, companyId: user.companyId }
@@ -531,6 +575,7 @@ export async function createLoopAction(formData: FormData) {
 export async function createApprovalAction(formData: FormData) {
   await assertSameOrigin();
   const user = await requireUser();
+  await enforceRateLimitOrRedirect("approval_create", [`company:${user.companyId}`, `user:${user.id}`], "/approvals");
   await prisma.approvalRequest.create({
     data: {
       companyId: user.companyId,
@@ -548,6 +593,7 @@ export async function decideApprovalAction(formData: FormData) {
   if (!canManageCompany(user)) {
     redirect("/dashboard");
   }
+  await enforceRateLimitOrRedirect("approval_decide", [`company:${user.companyId}`, `user:${user.id}`], "/approvals");
   const approvalId = String(formData.get("approvalId"));
   const status = String(formData.get("status"));
   await prisma.approvalRequest.updateMany({
@@ -563,8 +609,9 @@ export async function createCompanyAction(formData: FormData) {
   if (!isKipekeeAdmin(user)) {
     redirect("/dashboard");
   }
+  await enforceRateLimitOrRedirect("company_onboarding", [`user:${user.id}`], "/onboarding");
   const packageId = String(formData.get("packageId"));
-  const isolationTier = String(formData.get("isolationTier") || "PROFILE");
+  const isolationTier = safeIsolationTier(String(formData.get("isolationTier") || "PROFILE"));
   const companyName = String(formData.get("companyName")).trim();
   const ownerName = String(formData.get("ownerName") ?? "").trim();
   const ownerEmail = String(formData.get("ownerEmail") ?? "").trim().toLowerCase();
@@ -632,7 +679,8 @@ export async function createCompanyAction(formData: FormData) {
           role: roles.CLIENT_OWNER,
           tokenHash: hashToken(token),
           invitedBy: user.email,
-          expiresAt: inviteExpiresAt()
+          expiresAt: inviteExpiresAt(),
+          maxOpenCount: inviteMaxOpenCount()
         }
       });
 
@@ -707,7 +755,8 @@ export async function createCompanyAction(formData: FormData) {
 
   revalidatePath("/onboarding");
   if (createdInviteToken) {
-    redirect(`/onboarding?invite=${createdInviteToken}`);
+    await setInviteFlash("onboarding", createdInviteToken);
+    redirect("/onboarding?inviteCreated=1");
   }
 }
 
@@ -717,6 +766,7 @@ export async function createInvoiceAction(formData: FormData) {
   if (!isKipekeeAdmin(user)) {
     redirect("/dashboard");
   }
+  await enforceRateLimitOrRedirect("invoice_create", [`user:${user.id}`], "/billing");
   const companyId = String(formData.get("companyId") || user.companyId);
   const company = await prisma.company.findUnique({ where: { id: companyId } });
   if (!company) {
@@ -740,9 +790,13 @@ export async function planIntegrationAction(formData: FormData) {
   if (!canManageCompany(user)) {
     redirect("/dashboard");
   }
+  await enforceRateLimitOrRedirect("integration_request", [`company:${user.companyId}`, `user:${user.id}`], "/integrations");
   const provider = String(formData.get("provider"));
   const displayName = String(formData.get("displayName"));
   const scopes = String(formData.get("scopes"));
+  if (!allowedIntegrationProviders.has(provider)) {
+    redirect("/integrations?error=provider");
+  }
 
   await prisma.integrationConnection.upsert({
     where: {
@@ -786,6 +840,7 @@ export async function createTeamInviteAction(formData: FormData) {
   if (!canManageTeam(user)) {
     redirect("/dashboard");
   }
+  await enforceRateLimitOrRedirect("team_invite_create", [`company:${user.companyId}`, `user:${user.id}`], "/team");
 
   const name = String(formData.get("name") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
@@ -807,7 +862,8 @@ export async function createTeamInviteAction(formData: FormData) {
       role,
       tokenHash: hashToken(token),
       invitedBy: user.email,
-      expiresAt: inviteExpiresAt()
+      expiresAt: inviteExpiresAt(),
+      maxOpenCount: inviteMaxOpenCount()
     }
   });
 
@@ -822,7 +878,40 @@ export async function createTeamInviteAction(formData: FormData) {
   });
 
   revalidatePath("/team");
-  redirect(`/team?invite=${token}`);
+  await setInviteFlash("team", token);
+  redirect("/team?inviteCreated=1");
+}
+
+export async function revokeTeamInviteAction(formData: FormData) {
+  await assertSameOrigin();
+  const user = await requireUser();
+  if (!canManageTeam(user)) {
+    redirect("/dashboard");
+  }
+  await enforceRateLimitOrRedirect("team_invite_revoke", [`company:${user.companyId}`, `user:${user.id}`], "/team");
+
+  const inviteId = String(formData.get("inviteId") ?? "");
+  await prisma.teamInvite.updateMany({
+    where: {
+      id: inviteId,
+      companyId: user.companyId,
+      acceptedAt: null,
+      revokedAt: null
+    },
+    data: {
+      revokedAt: new Date(),
+      revokedBy: user.email
+    }
+  });
+  await prisma.auditLog.create({
+    data: {
+      companyId: user.companyId,
+      actor: user.email,
+      action: "team.invite.revoked",
+      target: inviteId
+    }
+  });
+  revalidatePath("/team");
 }
 
 export async function acceptInviteAction(formData: FormData) {
@@ -830,26 +919,26 @@ export async function acceptInviteAction(formData: FormData) {
   const token = String(formData.get("token") ?? "");
   const password = String(formData.get("password") ?? "");
   const confirmPassword = String(formData.get("confirmPassword") ?? "");
+  const tokenHash = hashToken(token);
+  await enforceRateLimitOrRedirect("invite_accept", [`invite:${tokenHash}`], `/invite/${token}`);
 
   if (!token || !password || password !== confirmPassword || password.length < 8) {
     redirect(`/invite/${token}?error=password`);
   }
 
   const invite = await prisma.teamInvite.findUnique({
-    where: { tokenHash: hashToken(token) },
+    where: { tokenHash },
     include: { company: true }
   });
 
-  if (!invite || invite.acceptedAt || invite.revokedAt || invite.expiresAt < new Date()) {
+  if (!invite || invite.acceptedAt || invite.revokedAt || invite.expiresAt < new Date() || invite.openCount > invite.maxOpenCount) {
     redirect(`/invite/${token}?error=invalid`);
   }
 
-  const existingUser = await prisma.user.findFirst({
-    where: {
-      companyId: invite.companyId,
-      email: invite.email
-    }
-  });
+  const existingUser = await prisma.user.findUnique({ where: { email: invite.email } });
+  if (existingUser && existingUser.companyId !== invite.companyId) {
+    redirect(`/invite/${token}?error=existing`);
+  }
 
   if (existingUser) {
     await prisma.user.update({

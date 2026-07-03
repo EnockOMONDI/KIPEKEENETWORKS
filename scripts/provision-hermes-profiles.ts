@@ -1,15 +1,17 @@
 import { execFileSync } from "child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import os from "os";
 import path from "path";
 import { prisma } from "../lib/db";
+import { hardenHermesClientConfig, minimalHermesClientConfig } from "../lib/hermes-profile-security";
 import { companyNamespace, hermesProfileName } from "../lib/isolation";
 
-const hermesBin = process.env.HERMES_BIN || "/Users/djsean/.local/bin/hermes";
-const hermesRoot = "/Users/djsean/.hermes";
+const hermesBin = process.env.HERMES_BIN || "hermes";
+const hermesRoot = process.env.HERMES_HOME || path.join(os.homedir(), ".kipekee-hermes");
 const profilesDir = path.join(hermesRoot, "profiles");
 const sharedProfile = process.env.KIPEKEE_SHARED_HERMES_PROFILE || "kipekeenetworksworker";
 const runtimeDir = process.env.KIPEKEE_HERMES_RUNTIME_DIR || path.join(os.tmpdir(), "kipekee-hermes-runtime");
+const fallbackConfigPath = process.env.KIPEKEE_HERMES_CONFIG_SOURCE || path.join(os.homedir(), ".hermes", "config.yaml");
 
 function profileDir(profile: string) {
   return path.join(profilesDir, profile);
@@ -33,23 +35,36 @@ function ensureProfile(profile: string, description: string) {
 }
 
 function writeSoul(profile: string, content: string) {
-  mkdirSync(profileDir(profile), { recursive: true });
+  mkdirSync(profileDir(profile), { recursive: true, mode: 0o700 });
+  chmodSync(profileDir(profile), 0o700);
   writeFileSync(path.join(profileDir(profile), "SOUL.md"), `${content.trim()}\n`);
+}
+
+function sourceConfig() {
+  const dedicatedConfigPath = path.join(hermesRoot, "config.yaml");
+  if (existsSync(dedicatedConfigPath)) {
+    return readFileSync(dedicatedConfigPath, "utf8");
+  }
+  if (existsSync(fallbackConfigPath)) {
+    return readFileSync(fallbackConfigPath, "utf8");
+  }
+  return minimalHermesClientConfig(runtimeDir);
+}
+
+function writeRestrictedConfig(configPath: string, config: string) {
+  writeFileSync(configPath, config);
+  chmodSync(configPath, 0o600);
+}
+
+function hardenRootConfig() {
+  const configPath = path.join(hermesRoot, "config.yaml");
+  writeRestrictedConfig(configPath, hardenHermesClientConfig(sourceConfig(), runtimeDir));
 }
 
 function hardenClientProfile(profile: string) {
   const configPath = path.join(profileDir(profile), "config.yaml");
-  if (!existsSync(configPath)) {
-    return;
-  }
-
-  let config = readFileSync(configPath, "utf8");
-  config = config.replace(/toolsets:\n(?:  - .+\n)+/m, "toolsets:\n  - web\n");
-  config = config.replace(/disabled_toolsets:\s*\[\]/, "disabled_toolsets:\n  - hermes-cli");
-  config = config.replace(/backend:\s*local/, "backend: local");
-  config = config.replace(/cwd:\s*.+/, `cwd: ${runtimeDir}`);
-  config = config.replace(/persistent_shell:\s*true/, "persistent_shell: false");
-  writeFileSync(configPath, config);
+  const rawConfig = existsSync(configPath) ? readFileSync(configPath, "utf8") : sourceConfig();
+  writeRestrictedConfig(configPath, hardenHermesClientConfig(rawConfig, runtimeDir));
 }
 
 function employeeSoul(employeeName: string, companyName: string, approvedSoul?: string | null) {
@@ -68,6 +83,14 @@ Rules:
 }
 
 async function main() {
+  mkdirSync(hermesRoot, { recursive: true, mode: 0o700 });
+  chmodSync(hermesRoot, 0o700);
+  mkdirSync(profilesDir, { recursive: true, mode: 0o700 });
+  chmodSync(profilesDir, 0o700);
+  mkdirSync(runtimeDir, { recursive: true, mode: 0o700 });
+  chmodSync(runtimeDir, 0o700);
+  hardenRootConfig();
+
   ensureProfile(
     sharedProfile,
     "Shared Kipekee Networks worker for normal tenant-scoped client tasks."

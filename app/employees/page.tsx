@@ -8,7 +8,7 @@ import {
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { isolationLabel } from "@/lib/isolation";
-import { canManageCompany } from "@/lib/roles";
+import { canManageCompany, isKipekeeAdmin } from "@/lib/roles";
 import { Activity, Database, Search, SlidersHorizontal } from "lucide-react";
 
 export default async function EmployeesPage({
@@ -19,6 +19,7 @@ export default async function EmployeesPage({
   const user = await requireUser();
   const params = await searchParams;
   const manager = canManageCompany(user);
+  const platformAdmin = isKipekeeAdmin(user);
   const query = (params.q ?? "").trim().toLowerCase();
   const status = params.status ?? "all";
   const [employees, templates] = await Promise.all([
@@ -127,12 +128,12 @@ export default async function EmployeesPage({
                         <span className="font-semibold">{lastSession ? lastSession.toLocaleDateString() : "Not yet"}</span>
                       </div>
                       <div className="flex items-center justify-between gap-3 text-sm">
-                        <span className="text-graphite">Execution</span>
+                        <span className="text-graphite">Workspace</span>
                         <span className="max-w-44 truncate font-semibold">
                           {employee.hermesProfile
-                            ? "Dedicated employee profile"
+                            ? "Dedicated employee workspace"
                             : user.company.isolationTier === "SHARED"
-                              ? "Shared scoped execution"
+                              ? "Standard company workspace"
                               : "Pending setup"}
                         </span>
                       </div>
@@ -237,10 +238,12 @@ export default async function EmployeesPage({
               Display name
               <input className="mt-2 w-full rounded-md border border-black/10 px-3 py-2" name="displayName" required />
             </label>
-            <label className="block text-sm font-medium">
-              Hermes profile
-              <input className="mt-2 w-full rounded-md border border-black/10 px-3 py-2" name="hermesProfile" placeholder="Optional, only shown internally" />
-            </label>
+            {platformAdmin ? (
+              <label className="block text-sm font-medium">
+                Internal runtime profile
+                <input className="mt-2 w-full rounded-md border border-black/10 px-3 py-2" name="hermesProfile" placeholder="Optional platform override" />
+              </label>
+            ) : null}
             <SubmitButton className="w-full" pendingText="Creating employee">
               Create employee
             </SubmitButton>

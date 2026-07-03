@@ -12,13 +12,17 @@
     "prisma:migrate": "prisma migrate deploy",
     "prisma:migrate:dev": "prisma migrate dev",
     "seed": "tsx prisma/seed.ts",
+    "test": "vitest run",
+    "test:security": "vitest run tests/security",
     "loops:run": "tsx scripts/run-active-loops.ts",
+    "hermes:audit": "tsx scripts/audit-hermes-profiles.ts",
     "hermes:provision": "tsx scripts/provision-hermes-profiles.ts",
     "worker:hermes": "tsx scripts/hermes-worker.ts",
     "worker:hermes:once": "tsx scripts/hermes-worker.ts --once"
   },
   "dependencies": {
     "@prisma/client": "6.1.0",
+    "@supabase/supabase-js": "^2.109.0",
     "lucide-react": "^0.468.0",
     "next": "^15.1.0",
     "react": "^19.0.0",
@@ -35,7 +39,8 @@
     "prisma": "6.1.0",
     "tailwindcss": "^3.4.17",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.9"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

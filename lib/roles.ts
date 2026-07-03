@@ -11,7 +11,7 @@ export const roles = {
 export type Role = (typeof roles)[keyof typeof roles];
 
 export function isKipekeeAdmin(user: { role: string; company: { slug: string } }) {
-  return user.role === roles.KIPEKEE_ADMIN || (user.role === roles.OWNER && user.company.slug === "kipekee-studio");
+  return user.role === roles.KIPEKEE_ADMIN;
 }
 
 export function canManageCompany(user: { role: string; company: { slug: string } }) {

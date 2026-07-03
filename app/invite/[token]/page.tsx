@@ -2,6 +2,7 @@ import { Card } from "@/components/AppShell";
 import { SubmitButton } from "@/components/Interactive";
 import { acceptInviteAction } from "@/lib/actions";
 import { prisma } from "@/lib/db";
+import { enforceRateLimit, RateLimitError } from "@/lib/rate-limit";
 import { hashToken } from "@/lib/security";
 import { roleLabel } from "@/lib/roles";
 
@@ -21,11 +22,23 @@ export default async function InvitePage({
 }) {
   const { token } = await params;
   const { error } = await searchParams;
+  const tokenHash = hashToken(token);
+  let rateLimited = false;
+  try {
+    await enforceRateLimit("invite_open", [`invite:${tokenHash}`]);
+  } catch (limitError) {
+    if (limitError instanceof RateLimitError) {
+      rateLimited = true;
+    } else {
+      throw limitError;
+    }
+  }
   const invite = await prisma.teamInvite.findUnique({
-    where: { tokenHash: hashToken(token) },
+    where: { tokenHash },
     include: { company: true }
   });
-  if (invite && !invite.acceptedAt && !invite.revokedAt && invite.expiresAt >= new Date()) {
+  const exceededOpenLimit = Boolean(invite && invite.openCount >= invite.maxOpenCount);
+  if (invite && !rateLimited && !exceededOpenLimit && !invite.acceptedAt && !invite.revokedAt && invite.expiresAt >= new Date()) {
     await prisma.teamInvite.update({
       where: { id: invite.id },
       data: {
@@ -35,13 +48,17 @@ export default async function InvitePage({
       }
     });
   }
-  const invalid = !invite || invite.acceptedAt || invite.revokedAt || invite.expiresAt < new Date();
-  const status = invite?.acceptedAt
+  const invalid = rateLimited || !invite || invite.acceptedAt || invite.revokedAt || invite.expiresAt < new Date() || exceededOpenLimit;
+  const status = rateLimited
+    ? "temporarily unavailable"
+    : invite?.acceptedAt
     ? "already accepted"
     : invite?.revokedAt
       ? "revoked"
       : invite && invite.expiresAt < new Date()
         ? "expired"
+        : exceededOpenLimit
+          ? "no longer available"
         : "invalid";
 
   return (
@@ -80,7 +97,11 @@ export default async function InvitePage({
               </div>
               {error ? (
                 <div className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
-                  Passwords must match and be at least 8 characters.
+                  {error === "existing"
+                    ? "This email is already attached to another company workspace. Ask Kipekee support to review access."
+                    : error === "rate-limit"
+                      ? "Too many attempts. Please wait before trying again."
+                      : "Passwords must match and be at least 8 characters."}
                 </div>
               ) : null}
               <form action={acceptInviteAction} className="mt-5 space-y-3">

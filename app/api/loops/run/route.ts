@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { currentUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { signHermesJob } from "@/lib/hermes-job-signing";
+import { buildMemoryContextFromArtifacts } from "@/lib/memory-context";
+import { enforceRateLimit, RateLimitError } from "@/lib/rate-limit";
+import { assertSameOrigin } from "@/lib/request-security";
 import { canManageCompany } from "@/lib/roles";
 
 export async function POST(request: NextRequest) {
+  await assertSameOrigin();
   const user = await currentUser();
   if (!user) {
     return new NextResponse(null, {
@@ -16,6 +21,17 @@ export async function POST(request: NextRequest) {
       status: 303,
       headers: { Location: "/dashboard" }
     });
+  }
+  try {
+    await enforceRateLimit("loop_run", [`company:${user.companyId}`, `user:${user.id}`]);
+  } catch (error) {
+    if (error instanceof RateLimitError) {
+      return new NextResponse(null, {
+        status: 303,
+        headers: { Location: "/loops?error=rate-limit" }
+      });
+    }
+    throw error;
   }
 
   const formData = await request.formData();
@@ -31,16 +47,7 @@ export async function POST(request: NextRequest) {
     include: { artifact: true }
   });
 
-  const memoryContext = access
-    .map((item) => {
-      const text = item.artifact.extractedText?.trim();
-      if (!text) {
-        return null;
-      }
-      return `Artifact: ${item.artifact.title}\n${text.slice(0, 6000)}`;
-    })
-    .filter(Boolean)
-    .join("\n\n---\n\n");
+  const memoryContext = buildMemoryContextFromArtifacts(access.map((item) => item.artifact));
 
   const session = await prisma.session.create({
     data: {
@@ -49,8 +56,7 @@ export async function POST(request: NextRequest) {
       title: `Loop: ${loop.name}`
     }
   });
-  await prisma.hermesJob.create({
-    data: {
+  const jobData = {
       companyId: user.companyId,
       employeeId: loop.employeeId,
       sessionId: session.id,
@@ -62,7 +68,13 @@ export async function POST(request: NextRequest) {
       hermesNamespace: user.company.hermesNamespace,
       allowedArtifactIds: JSON.stringify(access.map((item) => item.artifactId)),
       allowedToolsets: JSON.stringify(["chat", "documents", "memory", "audit"]),
-      memoryContext,
+      memoryContext
+  };
+
+  await prisma.hermesJob.create({
+    data: {
+      ...jobData,
+      jobSignature: signHermesJob(jobData),
       status: "PENDING"
     }
   });

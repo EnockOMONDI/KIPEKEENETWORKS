@@ -1,21 +1,18 @@
 import { AppShell, Badge, Card, EmptyState, PageHeader } from "@/components/AppShell";
 import { SubmitButton } from "@/components/Interactive";
-import { createTeamInviteAction } from "@/lib/actions";
+import { createTeamInviteAction, revokeTeamInviteAction } from "@/lib/actions";
 import { inviteUrl as buildInviteUrl } from "@/lib/app-url";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { getInviteFlash } from "@/lib/invite-flash";
 import { requestOrigin } from "@/lib/request-security";
 import { canManageTeam, roleLabel, roles } from "@/lib/roles";
 import { redirect } from "next/navigation";
 
-export default async function TeamPage({
-  searchParams
-}: {
-  searchParams: Promise<{ invite?: string; error?: string }>;
-}) {
+export default async function TeamPage() {
   const user = await requireUser();
-  const params = await searchParams;
   const origin = await requestOrigin();
+  const inviteToken = await getInviteFlash("team");
   if (!canManageTeam(user)) {
     redirect("/dashboard");
   }
@@ -25,11 +22,11 @@ export default async function TeamPage({
     orderBy: { createdAt: "asc" }
   });
   const pendingInvites = await prisma.teamInvite.findMany({
-    where: { companyId: user.companyId, acceptedAt: null },
+    where: { companyId: user.companyId, acceptedAt: null, revokedAt: null },
     orderBy: { createdAt: "desc" },
     take: 10
   });
-  const inviteUrl = params.invite ? buildInviteUrl(params.invite, origin) : null;
+  const inviteUrl = inviteToken ? buildInviteUrl(inviteToken, origin) : null;
 
   return (
     <AppShell companyName={user.company.name} companySlug={user.company.slug} userEmail={user.email} userRole={user.role}>
@@ -92,7 +89,19 @@ export default async function TeamPage({
                   <div className="rounded-md bg-paper p-3" key={invite.id}>
                     <p className="font-semibold">{invite.name}</p>
                     <p className="mt-1 text-sm text-graphite">{invite.email}</p>
-                    <p className="mt-1 text-xs text-graphite">Expires {invite.expiresAt.toLocaleDateString()}</p>
+                    <p className="mt-1 text-xs text-graphite">
+                      Expires {invite.expiresAt.toLocaleDateString()} · Opens {invite.openCount}/{invite.maxOpenCount}
+                    </p>
+                    {invite.revokedAt ? (
+                      <Badge tone="danger">Revoked</Badge>
+                    ) : (
+                      <form action={revokeTeamInviteAction} className="mt-3">
+                        <input name="inviteId" type="hidden" value={invite.id} />
+                        <SubmitButton pendingText="Revoking" variant="secondary">
+                          Revoke invite
+                        </SubmitButton>
+                      </form>
+                    )}
                   </div>
                 ))}
               </div>

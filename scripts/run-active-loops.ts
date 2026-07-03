@@ -1,4 +1,6 @@
 import { prisma } from "../lib/db";
+import { signHermesJob } from "../lib/hermes-job-signing";
+import { buildMemoryContextFromArtifacts } from "../lib/memory-context";
 
 async function main() {
   const loops = await prisma.businessLoop.findMany({
@@ -15,16 +17,7 @@ async function main() {
       include: { artifact: true }
     });
 
-    const memoryContext = access
-      .map((item) => {
-        const text = item.artifact.extractedText?.trim();
-        if (!text) {
-          return null;
-        }
-        return `Artifact: ${item.artifact.title}\n${text.slice(0, 6000)}`;
-      })
-      .filter(Boolean)
-      .join("\n\n---\n\n");
+    const memoryContext = buildMemoryContextFromArtifacts(access.map((item) => item.artifact));
 
     const session = await prisma.session.create({
       data: {
@@ -33,8 +26,7 @@ async function main() {
         title: `Loop: ${loop.name}`
       }
     });
-    await prisma.hermesJob.create({
-      data: {
+    const jobData = {
         companyId: loop.companyId,
         employeeId: loop.employeeId,
         sessionId: session.id,
@@ -46,7 +38,13 @@ async function main() {
         hermesNamespace: loop.company.hermesNamespace,
         allowedArtifactIds: JSON.stringify(access.map((item) => item.artifactId)),
         allowedToolsets: JSON.stringify(["chat", "documents", "memory", "audit"]),
-        memoryContext,
+        memoryContext
+    };
+
+    await prisma.hermesJob.create({
+      data: {
+        ...jobData,
+        jobSignature: signHermesJob(jobData),
         status: "PENDING"
       }
     });

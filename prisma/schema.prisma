@@ -38,7 +38,7 @@ model User {
   id        String   @id @default(cuid())
   companyId String
   name      String
-  email     String
+  email     String   @unique
   passwordHash String?
   role      String   @default("MEMBER")
   createdAt DateTime @default(now())
@@ -46,7 +46,7 @@ model User {
   company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   authSessions AuthSession[]
 
-  @@unique([companyId, email])
+  @@index([companyId])
 }
 
 model TeamInvite {
@@ -60,9 +60,11 @@ model TeamInvite {
   expiresAt DateTime
   acceptedAt DateTime?
   revokedAt DateTime?
+  revokedBy String?
   openedAt DateTime?
   lastOpenedAt DateTime?
   openCount Int      @default(0)
+  maxOpenCount Int   @default(10)
   createdAt DateTime @default(now())
 
   company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -162,6 +164,7 @@ model Artifact {
   title         String
   kind          String
   storagePath   String
+  storageProvider String @default("local")
   fileSizeBytes Int      @default(0)
   extractedText String?
   memoryStatus  String   @default("ARTIFACT_ONLY")
@@ -226,6 +229,7 @@ model HermesJob {
   allowedArtifactIds String   @default("[]")
   allowedToolsets    String   @default("[]")
   memoryContext      String?
+  jobSignature       String?
   status             String   @default("PENDING")
   result             String?
   error              String?
@@ -321,4 +325,17 @@ model IntegrationConnection {
   company     Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@unique([companyId, provider])
+}
+
+model RateLimitBucket {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  action    String
+  subject   String
+  count     Int      @default(0)
+  resetAt   DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([action, resetAt])
 }

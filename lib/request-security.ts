@@ -6,6 +6,9 @@ export async function assertSameOrigin() {
   const host = headerStore.get("x-forwarded-host") ?? headerStore.get("host");
 
   if (!origin || !host) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("Missing request origin.");
+    }
     return;
   }
 

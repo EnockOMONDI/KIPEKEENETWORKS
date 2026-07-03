@@ -4,19 +4,16 @@ import { createCompanyAction } from "@/lib/actions";
 import { inviteUrl as buildInviteUrl } from "@/lib/app-url";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { getInviteFlash } from "@/lib/invite-flash";
 import { isolationLabel, isolationTiers } from "@/lib/isolation";
 import { requestOrigin } from "@/lib/request-security";
 import { isKipekeeAdmin } from "@/lib/roles";
 import { redirect } from "next/navigation";
 
-export default async function OnboardingPage({
-  searchParams
-}: {
-  searchParams: Promise<{ invite?: string }>;
-}) {
+export default async function OnboardingPage() {
   const user = await requireUser();
-  const params = await searchParams;
   const origin = await requestOrigin();
+  const inviteToken = await getInviteFlash("onboarding");
   if (!isKipekeeAdmin(user)) {
     redirect("/dashboard");
   }
@@ -24,7 +21,7 @@ export default async function OnboardingPage({
     prisma.onboardingPackage.findMany({ orderBy: { priceKes: "asc" } }),
     prisma.company.findMany({ orderBy: { createdAt: "desc" }, take: 20 })
   ]);
-  const inviteUrl = params.invite ? buildInviteUrl(params.invite, origin) : null;
+  const inviteUrl = inviteToken ? buildInviteUrl(inviteToken, origin) : null;
 
   return (
     <AppShell companyName={user.company.name} companySlug={user.company.slug} userEmail={user.email} userRole={user.role}>

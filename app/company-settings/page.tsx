@@ -1,7 +1,7 @@
 import { AppShell, Badge, Card, PageHeader } from "@/components/AppShell";
 import { requireUser } from "@/lib/auth";
 import { isolationLabel } from "@/lib/isolation";
-import { canManageCompany, roleLabel } from "@/lib/roles";
+import { canManageCompany, isKipekeeAdmin, roleLabel } from "@/lib/roles";
 import { redirect } from "next/navigation";
 
 export default async function CompanySettingsPage() {
@@ -9,6 +9,7 @@ export default async function CompanySettingsPage() {
   if (!canManageCompany(user)) {
     redirect("/dashboard");
   }
+  const platformAdmin = isKipekeeAdmin(user);
 
   return (
     <AppShell companyName={user.company.name} companySlug={user.company.slug} userEmail={user.email} userRole={user.role}>
@@ -23,8 +24,8 @@ export default async function CompanySettingsPage() {
           <div className="mt-4 space-y-3 text-sm text-graphite">
             <p>Slug: {user.company.slug}</p>
             <p>Status: {user.company.status}</p>
-            <p>Namespace: {user.company.hermesNamespace ?? "Not set"}</p>
-            <p>Hermes home: {user.company.hermesHomePath ?? "Shared/default"}</p>
+            {platformAdmin ? <p>Namespace: {user.company.hermesNamespace ?? "Not set"}</p> : null}
+            {platformAdmin ? <p>Hermes home: {user.company.hermesHomePath ?? "Shared/default"}</p> : null}
           </div>
         </Card>
         <Card>

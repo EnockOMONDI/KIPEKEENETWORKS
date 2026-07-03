@@ -23,6 +23,12 @@ export const isolationTiers = [
 
 export type IsolationTier = (typeof isolationTiers)[number]["value"];
 
+const isolationTierValues = new Set<string>(isolationTiers.map((tier) => tier.value));
+
+export function safeIsolationTier(value: string | null | undefined): IsolationTier {
+  return isolationTierValues.has(value ?? "") ? (value as IsolationTier) : "PROFILE";
+}
+
 export function companyNamespace(slug: string) {
   return slug.replace(/[^a-z0-9]/g, "").slice(0, 32) || "company";
 }
@@ -33,9 +39,11 @@ export function hermesProfileName(namespace: string, employeeName: string) {
 }
 
 export function hermesHomePath(namespace: string) {
-  return `/Users/djsean/.kipekee/hermes-homes/${namespace}`;
+  return path.join(os.homedir(), ".kipekee", "hermes-homes", namespace);
 }
 
 export function isolationLabel(value: string) {
   return isolationTiers.find((tier) => tier.value === value)?.label ?? value;
 }
+import os from "os";
+import path from "path";

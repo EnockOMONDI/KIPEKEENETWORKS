@@ -3,10 +3,11 @@ import { AppShell, Badge, Card, PageHeader } from "@/components/AppShell";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { isolationLabel } from "@/lib/isolation";
-import { roleLabel } from "@/lib/roles";
+import { isKipekeeAdmin, roleLabel } from "@/lib/roles";
 
 export default async function DashboardPage() {
   const user = await requireUser();
+  const platformAdmin = isKipekeeAdmin(user);
   const [employees, artifacts, loops, approvals, conversations, recentEmployees] = await Promise.all([
     prisma.companyEmployee.count({ where: { companyId: user.companyId } }),
     prisma.artifact.count({ where: { companyId: user.companyId } }),
@@ -71,7 +72,7 @@ export default async function DashboardPage() {
           <div className="mt-4 space-y-3 text-sm text-graphite">
             <p>Role: {roleLabel(user.role)}</p>
             <p>Isolation: {isolationLabel(user.company.isolationTier)}</p>
-            <p>Namespace: {user.company.hermesNamespace ?? user.company.slug}</p>
+            {platformAdmin ? <p>Namespace: {user.company.hermesNamespace ?? user.company.slug}</p> : null}
             <p>Scheduled activity: {loops}</p>
           </div>
         </Card>

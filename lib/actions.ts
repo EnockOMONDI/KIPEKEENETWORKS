@@ -15,6 +15,7 @@ import { assertSameOrigin, assertValidEmail } from "./request-security";
 import { canManageBilling, canManageCompany, canManageTeam, isKipekeeAdmin, roles } from "./roles";
 import { employeeTemplates, safeOrganisationType, starterWorkflowTemplates } from "./seed-data";
 import { hashPassword, hashToken } from "./security";
+import { logError, logInfo } from "./server-log";
 import { storeArtifactObject } from "./storage";
 
 const maxUploadBytes = 10 * 1024 * 1024;
@@ -294,6 +295,16 @@ export async function uploadArtifactAction(formData: FormData) {
   const allowedEmployeeIds = new Set(allowedEmployees.map((employee) => employee.id));
   const artifactId = id("artifact");
   const bytes = Buffer.from(await file.arrayBuffer());
+  logInfo("artifact.upload.requested", {
+    workspaceId: user.workspaceId,
+    companyId: user.companyId,
+    userId: user.id,
+    fileName: file.name,
+    fileSize: file.size,
+    ownerType,
+    employeeCount: employees.length
+  });
+
   const stored = await storeArtifactObject({
     artifactId,
     bytes,
@@ -301,7 +312,14 @@ export async function uploadArtifactAction(formData: FormData) {
     companySlug: user.company.slug,
     contentType: file.type || "application/octet-stream",
     fileName: file.name
-  }).catch(() => null);
+  }).catch((error) => {
+    logError("artifact.upload.storage_failed", error, {
+      workspaceId: user.workspaceId,
+      companyId: user.companyId,
+      fileName: file.name
+    });
+    return null;
+  });
 
   if (!stored) {
     redirect("/artifacts?error=storage");
@@ -500,12 +518,36 @@ export async function chatAction(formData: FormData) {
   if (!employeeId || !prompt) {
     redirect("/chat");
   }
+  logInfo("chat.submit.received", {
+    workspaceId: user.workspaceId,
+    companyId: user.companyId,
+    userId: user.id,
+    employeeId,
+    existingSessionId: existingSessionId || null,
+    workflowId: workflowId || null,
+    promptLength: prompt.length
+  });
   await enforceRateLimitOrRedirect("chat_create", [`company:${user.companyId}`, `user:${user.id}`, `employee:${employeeId}`], "/chat");
   assertHermesJobSigningConfigured();
 
-  const { employee, session, jobData } = await buildJobInput(user, employeeId, prompt, existingSessionId, workflowId);
+  let input: Awaited<ReturnType<typeof buildJobInput>>;
+  try {
+    input = await buildJobInput(user, employeeId, prompt, existingSessionId, workflowId);
+  } catch (error) {
+    logError("chat.submit.build_job_input_failed", error, {
+      workspaceId: user.workspaceId,
+      companyId: user.companyId,
+      employeeId,
+      existingSessionId: existingSessionId || null,
+      workflowId: workflowId || null
+    });
+    throw error;
+  }
 
-  await prisma.$transaction(async (tx) => {
+  const { employee, session, jobData } = input;
+
+  try {
+    await prisma.$transaction(async (tx) => {
     await tx.message.create({
       data: {
         sessionId: session.id,
@@ -535,6 +577,23 @@ export async function chatAction(formData: FormData) {
         metadata: JSON.stringify({ jobId: job.id, executionMode: "queue", runtimeProfile: job.runtimeProfile })
       }
     });
+    });
+  } catch (error) {
+    logError("chat.submit.transaction_failed", error, {
+      workspaceId: user.workspaceId,
+      companyId: user.companyId,
+      employeeId,
+      sessionId: session.id
+    });
+    throw error;
+  }
+
+  logInfo("chat.submit.queued", {
+    workspaceId: user.workspaceId,
+    companyId: user.companyId,
+    employeeId,
+    sessionId: session.id,
+    runtimeProfile: jobData.runtimeProfile
   });
 
   revalidatePath("/chat");
@@ -872,6 +931,12 @@ export async function createCompanyAction(formData: FormData) {
 
   if (createdCompanyId) {
     const provisionResult = await provisionCompanyRuntimeProfile(createdCompanyId);
+    if (!provisionResult.ok) {
+      logError("company.onboarding.runtime_provision_deferred", new Error(provisionResult.reason), {
+        companyId: createdCompanyId,
+        runtimeProfile
+      });
+    }
     await prisma.auditLog.create({
       data: {
         workspaceId: createdWorkspaceId,

@@ -1,6 +1,10 @@
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const projectRoot = dirname(fileURLToPath(import.meta.url));
+
 /** @type {import("next").NextConfig} */
 const nextConfig = {
-  output: "standalone",
   async headers() {
     return [
       {
@@ -44,7 +48,7 @@ const nextConfig = {
       }
     ];
   },
-  outputFileTracingRoot: process.cwd(),
+  outputFileTracingRoot: projectRoot,
   experimental: {}
 };
 

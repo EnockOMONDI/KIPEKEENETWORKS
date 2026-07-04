@@ -3,6 +3,7 @@ import { chmod, mkdir, writeFile } from "fs/promises";
 import os from "os";
 import path from "path";
 import { promisify } from "util";
+import { logError, logInfo } from "./server-log";
 
 const execFileAsync = promisify(execFile);
 const hermesRoot = process.env.HERMES_HOME || path.join(os.homedir(), ".kipekee-hermes");
@@ -149,6 +150,18 @@ export async function runHermesTask(task: HermesTask): Promise<HermesResult> {
   const profile = task.runtimeProfile || process.env.KIPEKEE_SHARED_HERMES_PROFILE || "kipekeenetworksworker";
   const employeeName = task.employeeName ?? "Kipekee AI employee";
 
+  logInfo("hermes.task.started", {
+    mode,
+    workspaceId: task.workspaceId,
+    companyId: task.companyId,
+    companyRuntimeId: task.companyRuntimeId,
+    employeeName,
+    runtimeProfile: profile,
+    promptLength: task.prompt.length,
+    allowedArtifacts: task.allowedArtifactIds.length,
+    allowedToolsets: task.allowedToolsets
+  });
+
   if (mode === "mock") {
     return {
       mode,
@@ -198,9 +211,19 @@ export async function runHermesTask(task: HermesTask): Promise<HermesResult> {
       }
     );
 
+    const output = sanitizeClientOutput(stdout.trim() || stderr.trim(), employeeName);
+    logInfo("hermes.task.completed", {
+      mode,
+      workspaceId: task.workspaceId,
+      companyId: task.companyId,
+      companyRuntimeId: task.companyRuntimeId,
+      runtimeProfile: profile,
+      outputLength: output.length
+    });
+
     return {
       mode,
-      output: sanitizeClientOutput(stdout.trim() || stderr.trim(), employeeName),
+      output,
       metadata: {
         workspaceId: task.workspaceId,
         companyId: task.companyId,
@@ -209,7 +232,14 @@ export async function runHermesTask(task: HermesTask): Promise<HermesResult> {
         sessionId: task.sessionId
       }
     };
-  } catch {
+  } catch (error) {
+    logError("hermes.task.failed", error, {
+      mode,
+      workspaceId: task.workspaceId,
+      companyId: task.companyId,
+      companyRuntimeId: task.companyRuntimeId,
+      runtimeProfile: profile
+    });
     return {
       mode,
       output: safeClientError(employeeName),

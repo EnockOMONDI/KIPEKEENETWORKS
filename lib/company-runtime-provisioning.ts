@@ -6,6 +6,7 @@ import path from "path";
 import { promisify } from "util";
 import { prisma } from "./db";
 import { hardenHermesClientConfig, minimalHermesClientConfig } from "./hermes-profile-security";
+import { logError, logInfo } from "./server-log";
 
 const execFileAsync = promisify(execFile);
 
@@ -110,6 +111,7 @@ async function writeRuntimeFiles(profile: string, content: string) {
 }
 
 export async function provisionCompanyRuntimeProfile(companyId: string) {
+  logInfo("runtime.provision.started", { companyId });
   const company = await prisma.company.findUnique({
     where: { id: companyId },
     include: {
@@ -120,6 +122,7 @@ export async function provisionCompanyRuntimeProfile(companyId: string) {
   });
 
   if (!company?.runtime) {
+    logError("runtime.provision.missing_runtime", new Error("Company runtime does not exist."), { companyId });
     return { ok: false, reason: "Company runtime does not exist." };
   }
 
@@ -138,11 +141,21 @@ export async function provisionCompanyRuntimeProfile(companyId: string) {
       }
     });
 
+    logInfo("runtime.provision.completed", {
+      companyId,
+      runtimeId: company.runtime.id,
+      runtimeProfile: company.runtime.hermesProfile
+    });
     return { ok: true, profile: company.runtime.hermesProfile };
   } catch (error) {
     await prisma.companyRuntime.update({
       where: { id: company.runtime.id },
       data: { status: "PENDING" }
+    });
+    logError("runtime.provision.failed", error, {
+      companyId,
+      runtimeId: company.runtime.id,
+      runtimeProfile: company.runtime.hermesProfile
     });
     return {
       ok: false,

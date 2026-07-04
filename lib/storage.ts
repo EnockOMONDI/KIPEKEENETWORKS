@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { createClient } from "@supabase/supabase-js";
+import { envPresence, logError, logInfo } from "./server-log";
 
 export type StoredArtifactObject = {
   storagePath: string;
@@ -62,6 +63,15 @@ export async function storeArtifactObject({
   if (provider === "supabase") {
     const bucket = process.env.KIPEKEE_STORAGE_BUCKET || "company-artifacts";
     const objectKey = artifactObjectKey({ artifactId, companyId, fileName });
+    logInfo("storage.upload.started", {
+      artifactId,
+      companyId,
+      provider,
+      bucket,
+      contentType,
+      bytes: bytes.length,
+      env: envPresence(["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "KIPEKEE_STORAGE_BUCKET"])
+    });
     const { error } = await supabaseStorageClient()
       .storage
       .from(bucket)
@@ -71,6 +81,7 @@ export async function storeArtifactObject({
       });
 
     if (error) {
+      logError("storage.upload.failed", error, { artifactId, companyId, provider, bucket });
       throw new Error(`Supabase Storage upload failed: ${error.message}`);
     }
 
@@ -81,7 +92,9 @@ export async function storeArtifactObject({
   }
 
   if (process.env.NODE_ENV === "production") {
-    throw new Error("Local artifact storage is disabled in production.");
+    const error = new Error("Local artifact storage is disabled in production.");
+    logError("storage.local_disabled_in_production", error, { artifactId, companyId, provider });
+    throw error;
   }
 
   const companyDir = path.join(process.cwd(), "uploads", companySlug);

@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "crypto";
+import { envPresence, logError } from "./server-log";
 
 export type HermesJobSigningPayload = {
   workspaceId: string;
@@ -24,7 +25,13 @@ function signingSecret() {
   }
 
   if (process.env.NODE_ENV === "production" || process.env.KIPEKEE_HERMES_MODE === "profile") {
-    throw new Error("KIPEKEE_JOB_SIGNING_SECRET is required when Hermes profile mode is active.");
+    const error = new Error("KIPEKEE_JOB_SIGNING_SECRET is required when Hermes profile mode is active.");
+    logError("hermes.signing_secret.missing", error, {
+      nodeEnv: process.env.NODE_ENV,
+      hermesMode: process.env.KIPEKEE_HERMES_MODE,
+      env: envPresence(["KIPEKEE_JOB_SIGNING_SECRET", "DATABASE_URL", "DIRECT_URL"])
+    });
+    throw error;
   }
 
   return "dev-only-kipekee-job-signing-secret";

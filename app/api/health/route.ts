@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { databaseEnvPresence, healthEnvPresence } from "@/lib/health-diagnostics";
+import { logError } from "@/lib/server-log";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +15,8 @@ export async function GET() {
       {
         ok: true,
         database: "reachable",
-        latencyMs: Date.now() - startedAt
+        latencyMs: Date.now() - startedAt,
+        env: healthEnvPresence()
       },
       {
         headers: {
@@ -21,7 +24,11 @@ export async function GET() {
         }
       }
     );
-  } catch {
+  } catch (error) {
+    logError("health.database_unreachable", error, {
+      latencyMs: Date.now() - startedAt,
+      env: databaseEnvPresence()
+    });
     return NextResponse.json(
       {
         ok: false,

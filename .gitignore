@@ -54,3 +54,4 @@ backups/
 backup/
 tmp/
 temp/
+.tsbuildinfo

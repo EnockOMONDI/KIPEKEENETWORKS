@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AppShell, Badge, Card, EmptyState, PageHeader } from "@/components/AppShell";
+import { SystemSubnav, systemKnowledgeLinks } from "@/components/SystemKnowledge";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { isKipekeeAdmin } from "@/lib/roles";
@@ -126,11 +127,21 @@ export default async function SystemsPage() {
 
   return (
     <AppShell companyName={user.company?.name ?? "Kipekee Studio"} companySlug={user.company?.slug ?? "kipekee-studio"} userEmail={user.email} platformRole={user.role} userRole={user.memberRole ?? user.role}>
+      <SystemSubnav />
       <PageHeader
         eyebrow="Operations"
         title="Systems"
         description="Kipekee Studio control room for web app health, local Hermes workers, client requests, and operational risk."
       />
+
+      <div className="mb-6 grid gap-4 md:grid-cols-5">
+        {systemKnowledgeLinks.map((link) => (
+          <Link className="rounded-3xl border border-violetline bg-white p-4 shadow-panel transition hover:-translate-y-0.5 hover:border-forest/40" href={link.href} key={link.href}>
+            <p className="text-sm font-semibold text-forest">{link.label}</p>
+            <p className="mt-2 text-xs leading-5 text-graphite">Open verified platform memory</p>
+          </Link>
+        ))}
+      </div>
 
       <div className="grid gap-4 md:grid-cols-4">
         <Metric label="Web app" tone="success" value="Online" />

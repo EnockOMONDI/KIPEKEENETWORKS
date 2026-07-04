@@ -117,6 +117,7 @@ export default function Home() {
               height={900}
               priority
               src="/landing/founder-ai-workforce.png"
+              unoptimized
               width={900}
             />
             <Image
@@ -125,6 +126,7 @@ export default function Home() {
               height={900}
               priority
               src="/landing/team-ai-workforce.png"
+              unoptimized
               width={1400}
             />
           </div>

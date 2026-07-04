@@ -736,7 +736,7 @@ export async function createCompanyAction(formData: FormData) {
         type: companyType,
         industryKey: industryTemplate?.key ?? industryKey,
         countryCode,
-        status: "TRIAL",
+        status: "ACTIVE",
         isolationTier,
         hermesNamespace: runtimeNamespace,
         runtime: {

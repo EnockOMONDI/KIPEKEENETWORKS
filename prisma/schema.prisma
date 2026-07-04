@@ -70,7 +70,7 @@ model Company {
   type            String   @default("COMPANY")
   industryKey     String?
   countryCode     String?
-  status          String   @default("TRIAL")
+  status          String   @default("ACTIVE")
   isolationTier   String   @default("PROFILE")
   hermesNamespace String?
   createdAt       DateTime @default(now())

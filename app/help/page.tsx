@@ -1,10 +1,10 @@
 import { AppShell, Card, PageHeader } from "@/components/AppShell";
-import { requireUser } from "@/lib/auth";
+import { requireCompanyContext } from "@/lib/auth";
 
 const items = [
   {
     title: "AI Employees",
-    body: "These are company-owned digital staff. They use approved company knowledge and permissions."
+    body: "These are organisation-owned digital staff. They use approved organisation knowledge and permissions."
   },
   {
     title: "Knowledge",
@@ -16,19 +16,19 @@ const items = [
   },
   {
     title: "Integrations",
-    body: "Connected services belong to the company and should be granted to employees only where needed."
+    body: "Connected services belong to the organisation and should be granted to employees only where needed."
   }
 ];
 
 export default async function HelpPage() {
-  const user = await requireUser();
+  const user = await requireCompanyContext();
 
   return (
-    <AppShell companyName={user.company.name} companySlug={user.company.slug} userEmail={user.email} userRole={user.role}>
+    <AppShell companyName={user.company.name} companySlug={user.company.slug} userEmail={user.email} platformRole={user.role} userRole={user.memberRole ?? user.role}>
       <PageHeader
         eyebrow="Support"
         title="Help"
-        description="A short guide to how Kipekee Networks works inside a company workspace."
+        description="A short guide to how Kipekee Networks works inside an organisation workspace."
       />
       <div className="grid gap-4 md:grid-cols-2">
         {items.map((item) => (

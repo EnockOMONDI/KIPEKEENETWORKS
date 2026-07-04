@@ -5,6 +5,8 @@ import { buildMemoryContextFromArtifacts } from "../lib/memory-context";
 
 const workerId = process.env.KIPEKEE_WORKER_ID || `worker-${process.pid}`;
 const pollIntervalMs = Number(process.env.KIPEKEE_WORKER_POLL_MS || 3000);
+const staleRunningMs = Number(process.env.KIPEKEE_WORKER_STALE_RUNNING_MS || 10 * 60 * 1000);
+const maxJobAttempts = Number(process.env.KIPEKEE_WORKER_MAX_ATTEMPTS || 3);
 const once = process.argv.includes("--once");
 
 async function writeHeartbeat(currentJobId?: string | null) {
@@ -44,7 +46,42 @@ function parseJsonArray(value: string) {
   }
 }
 
+async function recoverStaleRunningJobs() {
+  const staleBefore = new Date(Date.now() - staleRunningMs);
+  const retryable = await prisma.hermesJob.updateMany({
+    where: {
+      status: "RUNNING",
+      lockedAt: { lt: staleBefore },
+      attempts: { lt: maxJobAttempts }
+    },
+    data: {
+      status: "PENDING",
+      lockedAt: null,
+      lockedBy: null,
+      error: "Recovered stale running job for retry."
+    }
+  });
+
+  const failed = await prisma.hermesJob.updateMany({
+    where: {
+      status: "RUNNING",
+      lockedAt: { lt: staleBefore },
+      attempts: { gte: maxJobAttempts }
+    },
+    data: {
+      status: "FAILED",
+      completedAt: new Date(),
+      error: "Hermes job exceeded retry limit after stale worker lock."
+    }
+  });
+
+  if (retryable.count || failed.count) {
+    console.log(`[${workerId}] Recovered ${retryable.count} stale job(s), failed ${failed.count} exhausted job(s).`);
+  }
+}
+
 async function claimJob() {
+  await recoverStaleRunningJobs();
   const job = await prisma.hermesJob.findFirst({
     where: { status: "PENDING" },
     orderBy: { createdAt: "asc" }
@@ -75,7 +112,7 @@ async function claimJob() {
   }
 }
 
-async function failJob(jobId: string, companyId: string, reason: string) {
+async function failJob(jobId: string, workspaceId: string, companyId: string, reason: string) {
   await prisma.$transaction([
     prisma.hermesJob.update({
       where: { id: jobId },
@@ -87,6 +124,7 @@ async function failJob(jobId: string, companyId: string, reason: string) {
     }),
     prisma.auditLog.create({
       data: {
+        workspaceId,
         companyId,
         actor: workerId,
         action: "hermes.job.rejected",
@@ -109,15 +147,17 @@ async function processOne() {
     await writeHeartbeat(job.id);
     const signatureOk = verifyHermesJobSignature(
       {
+        workspaceId: job.workspaceId,
         companyId: job.companyId,
+        companyRuntimeId: job.companyRuntimeId,
         employeeId: job.employeeId,
         sessionId: job.sessionId,
+        workflowId: job.workflowId,
         prompt: job.prompt,
         employeeName: job.employeeName,
-        hermesProfile: job.hermesProfile,
         companyName: job.companyName,
-        isolationTier: job.isolationTier,
-        hermesNamespace: job.hermesNamespace,
+        runtimeProfile: job.runtimeProfile,
+        skillKeys: job.skillKeys,
         allowedArtifactIds: job.allowedArtifactIds,
         allowedToolsets: job.allowedToolsets,
         memoryContext: job.memoryContext
@@ -126,7 +166,7 @@ async function processOne() {
     );
 
     if (!signatureOk) {
-      await failJob(job.id, job.companyId, "Invalid Hermes job signature.");
+      await failJob(job.id, job.workspaceId, job.companyId, "Invalid Hermes job signature.");
       await writeHeartbeat(null);
       return true;
     }
@@ -135,56 +175,110 @@ async function processOne() {
       where: {
         id: job.employeeId,
         companyId: job.companyId,
+        company: {
+          workspaceId: job.workspaceId,
+          runtime: {
+            id: job.companyRuntimeId,
+            hermesProfile: job.runtimeProfile
+          }
+        },
         sessions: {
           some: {
             id: job.sessionId,
+            workspaceId: job.workspaceId,
             companyId: job.companyId
           }
         }
       },
       include: {
-        company: true,
+        company: {
+          include: {
+            runtime: true,
+            brandVoice: true,
+            businessRules: {
+              where: { active: true }
+            }
+          }
+        },
+        skills: {
+          where: { enabled: true },
+          include: { skill: true }
+        },
+        workflows: {
+          where: { enabled: true },
+          include: { workflow: true }
+        },
         artifactAccess: {
-          where: { canUseAsMemory: true },
+          where: {
+            canUseAsMemory: true,
+            artifact: {
+              OR: [
+                { companyId: job.companyId },
+                { workspaceId: job.workspaceId, companyId: null }
+              ]
+            }
+          },
           include: { artifact: true }
         }
       }
     });
 
-    if (!canonical) {
-      await failJob(job.id, job.companyId, "Hermes job failed tenant ownership validation.");
+    if (!canonical || !canonical.company.runtime) {
+      await failJob(job.id, job.workspaceId, job.companyId, "Hermes job failed workspace/company runtime validation.");
       await writeHeartbeat(null);
       return true;
     }
 
-    if ((job.hermesProfile ?? null) !== (canonical.hermesProfile ?? null)) {
-      await failJob(job.id, job.companyId, "Hermes job profile does not match employee profile.");
+    const requestedSkillKeys = parseJsonArray(job.skillKeys);
+    const allowedSkillKeys = new Set(canonical.skills.map((item) => item.skill.key));
+    if (requestedSkillKeys.some((key) => !allowedSkillKeys.has(key))) {
+      await failJob(job.id, job.workspaceId, job.companyId, "Hermes job requested an unauthorized skill.");
       await writeHeartbeat(null);
       return true;
     }
 
-    const profileSetup = await prisma.employeeProfileSetup.findFirst({
-      where: {
-        companyId: job.companyId,
-        employeeId: job.employeeId,
-        status: "APPROVED"
-      }
-    });
+    const workflow = job.workflowId
+      ? canonical.workflows.find((item) => item.workflowId === job.workflowId)?.workflow ?? null
+      : null;
+    if (job.workflowId && !workflow) {
+      await failJob(job.id, job.workspaceId, job.companyId, "Hermes job requested an unauthorized workflow.");
+      await writeHeartbeat(null);
+      return true;
+    }
+
+    const businessRules = canonical.company.businessRules
+      .filter((rule) => !rule.workflowId || rule.workflowId === job.workflowId)
+      .map((rule) => `- ${rule.name}: ${rule.ruleText}`)
+      .join("\n");
+    const brandVoice = canonical.company.brandVoice
+      ? [
+          `Tone: ${canonical.company.brandVoice.tone}`,
+          canonical.company.brandVoice.styleRules,
+          canonical.company.brandVoice.formattingPreferences,
+          canonical.company.brandVoice.forbiddenWords ? `Forbidden wording: ${canonical.company.brandVoice.forbiddenWords}` : ""
+        ].filter(Boolean).join("\n")
+      : null;
 
     const result = await runHermesTask({
+      workspaceId: job.workspaceId,
       companyId: canonical.companyId,
+      companyRuntimeId: canonical.company.runtime.id,
       companyName: canonical.company.name,
-      isolationTier: canonical.company.isolationTier,
-      hermesNamespace: canonical.company.hermesNamespace,
+      companyType: canonical.company.type,
+      runtimeProfile: canonical.company.runtime.hermesProfile,
       agentId: canonical.id,
       sessionId: job.sessionId,
+      workflowName: workflow?.name,
+      workflowDescription: workflow?.description,
       employeeName: canonical.displayName,
-      hermesProfile: canonical.hermesProfile,
+      roleInstructions: canonical.roleInstructions,
+      skillSummaries: canonical.skills.map((item) => `${item.skill.name}: ${item.skill.description}`),
       prompt: job.prompt,
       allowedArtifactIds: canonical.artifactAccess.map((item) => item.artifactId),
       allowedToolsets: parseJsonArray(job.allowedToolsets),
       memoryContext: buildMemoryContextFromArtifacts(canonical.artifactAccess.map((item) => item.artifact)),
-      profileSetupSoul: profileSetup?.approvedSoul ?? profileSetup?.draftSoul
+      brandVoice,
+      businessRules
     });
 
     await prisma.$transaction([
@@ -206,6 +300,7 @@ async function processOne() {
       }),
       prisma.auditLog.create({
         data: {
+          workspaceId: job.workspaceId,
           companyId: job.companyId,
           actor: workerId,
           action: "hermes.job.completed",

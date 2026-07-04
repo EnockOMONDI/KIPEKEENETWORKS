@@ -5,7 +5,7 @@ import { auditHermesClientConfig } from "../lib/hermes-profile-security";
 
 const hermesRoot = process.env.HERMES_HOME || path.join(os.homedir(), ".kipekee-hermes");
 const profilesDir = path.join(hermesRoot, "profiles");
-const runtimeDir = process.env.KIPEKEE_HERMES_RUNTIME_DIR || path.join(os.tmpdir(), "kipekee-hermes-runtime");
+const runtimeDir = process.env.KIPEKEE_HERMES_RUNTIME_DIR || "/tmp/kipekee-hermes-runtime";
 
 if (!existsSync(profilesDir)) {
   console.error(`Hermes profiles directory does not exist: ${profilesDir}`);
@@ -48,6 +48,10 @@ for (const entry of readdirSync(profilesDir, { withFileTypes: true })) {
   }
 
   const configPath = path.join(profileDir, "config.yaml");
+  const profileYamlPath = path.join(profileDir, "profile.yaml");
+  if (!existsSync(profileYamlPath)) {
+    failures.push(`${entry.name}: missing profile.yaml`);
+  }
   if (!existsSync(configPath)) {
     failures.push(`${entry.name}: missing config.yaml`);
     continue;

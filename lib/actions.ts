@@ -1,19 +1,20 @@
 "use server";
 
 import { randomBytes, randomUUID } from "crypto";
-import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { login, logout, requireCompanyContext, requireUser } from "./auth";
+import { provisionCompanyRuntimeProfile } from "./company-runtime-provisioning";
 import { prisma } from "./db";
-import { login, logout, requireUser } from "./auth";
-import { employeeTemplates } from "./seed-data";
-import { companyNamespace, hermesHomePath, hermesProfileName, safeIsolationTier } from "./isolation";
-import { hashPassword, hashToken } from "./security";
-import { canManageBilling, canManageCompany, canManageTeam, isKipekeeAdmin, roles } from "./roles";
-import { assertSameOrigin, assertValidEmail } from "./request-security";
-import { signHermesJob } from "./hermes-job-signing";
+import { assertHermesJobSigningConfigured, signHermesJob } from "./hermes-job-signing";
 import { setInviteFlash } from "./invite-flash";
+import { companyNamespace, companyRuntimeProfileName, hermesHomePath, safeIsolationTier } from "./isolation";
 import { buildMemoryContextFromArtifacts } from "./memory-context";
 import { enforceRateLimit, RateLimitAction, RateLimitError } from "./rate-limit";
+import { assertSameOrigin, assertValidEmail } from "./request-security";
+import { canManageBilling, canManageCompany, canManageTeam, isKipekeeAdmin, roles } from "./roles";
+import { employeeTemplates, safeOrganisationType, starterWorkflowTemplates } from "./seed-data";
+import { hashPassword, hashToken } from "./security";
 import { storeArtifactObject } from "./storage";
 
 const maxUploadBytes = 10 * 1024 * 1024;
@@ -39,14 +40,20 @@ function id(prefix: string) {
   return `${prefix}_${randomUUID()}`;
 }
 
-async function availableSlug(baseSlug: string) {
-  const fallback = `company-${Date.now()}`;
-  const normalized = baseSlug || fallback;
-  let slug = normalized;
+function slugify(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || `item-${Date.now()}`;
+}
+
+async function availableSlug(model: "workspace" | "company", baseSlug: string) {
+  let slug = baseSlug || `${model}-${Date.now()}`;
   let suffix = 2;
 
-  while (await prisma.company.findUnique({ where: { slug } })) {
-    slug = `${normalized}-${suffix}`;
+  while (
+    model === "workspace"
+      ? await prisma.workspace.findUnique({ where: { slug } })
+      : await prisma.company.findUnique({ where: { slug } })
+  ) {
+    slug = `${baseSlug}-${suffix}`;
     suffix += 1;
   }
 
@@ -62,7 +69,7 @@ function inviteExpiresAt() {
 }
 
 function inviteMaxOpenCount() {
-  return Number(process.env.KIPEKEE_INVITE_MAX_OPENS || 10);
+  return Number(process.env.KIPEKEE_INVITE_MAX_OPENS || 5);
 }
 
 async function enforceRateLimitOrRedirect(action: RateLimitAction, subjects: string[], redirectTo: string) {
@@ -76,50 +83,110 @@ async function enforceRateLimitOrRedirect(action: RateLimitAction, subjects: str
   }
 }
 
-function safeInviteRole(role: string, user: { role: string; company: { slug: string } }) {
-  const allowedRoles: string[] = [roles.CLIENT_OWNER, roles.CLIENT_ADMIN, roles.CLIENT_MEMBER, roles.ADMIN, roles.MEMBER];
+function safeInviteRole(role: string, user: { role: string; memberRole?: string }) {
+  const allowedRoles: string[] = [roles.CLIENT_OWNER, roles.CLIENT_ADMIN, roles.CLIENT_MEMBER, roles.ADMIN, roles.MEMBER, roles.OWNER];
   const safeRole = allowedRoles.includes(role) ? role : roles.CLIENT_MEMBER;
-  if (safeRole === roles.CLIENT_OWNER && !isKipekeeAdmin(user) && user.role !== roles.CLIENT_OWNER && user.role !== roles.OWNER) {
+  if (safeRole === roles.CLIENT_OWNER && !isKipekeeAdmin(user) && user.memberRole !== roles.OWNER && user.role !== roles.OWNER) {
     return roles.CLIENT_ADMIN;
   }
 
   return safeRole;
 }
 
-function defaultEmployeeSoul(employeeName: string, companyName: string) {
+function defaultRoleInstructions(employeeName: string, companyName: string) {
   return [
-    `You are ${employeeName}, a Kipekee Networks AI employee assigned to ${companyName}.`,
-    "",
-    "Purpose:",
-    "- Help the company with practical business work in your role.",
-    "- Learn from approved company documents, SOPs, policies, examples, and user instructions.",
-    "- Ask clear follow-up questions when company context is missing.",
-    "",
-    "Behavior:",
-    "- Keep answers concise first, then offer details or next actions.",
-    "- Prepare drafts, plans, checklists, and recommendations.",
-    "- Ask for approval before sensitive external actions."
+    `${employeeName} works inside the ${companyName} company runtime.`,
+    "Use only approved company/workspace knowledge and assigned workflows.",
+    "Draft sensitive external actions for human approval."
   ].join("\n");
 }
 
-function signedHermesJobData(data: {
-  companyId: string;
-  employeeId: string;
-  sessionId: string;
-  prompt: string;
-  employeeName: string;
-  hermesProfile?: string | null;
-  companyName: string;
-  isolationTier: string;
-  hermesNamespace?: string | null;
-  allowedArtifactIds: string;
-  allowedToolsets: string;
-  memoryContext?: string | null;
-}) {
-  return {
-    ...data,
-    jobSignature: signHermesJob(data)
-  };
+function parseJsonArray(value?: string | null) {
+  if (!value) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function assignDefaultSkills(employeeId: string, skillKeys: string[]) {
+  const skills = await prisma.skill.findMany({ where: { key: { in: skillKeys }, enabled: true } });
+  for (const skill of skills) {
+    await prisma.employeeSkill.upsert({
+      where: {
+        employeeId_skillId: {
+          employeeId,
+          skillId: skill.id
+        }
+      },
+      update: { enabled: true },
+      create: {
+        employeeId,
+        skillId: skill.id,
+        enabled: true
+      }
+    });
+  }
+}
+
+async function installWorkflowTemplate(companyId: string, workflowTemplateKey: string) {
+  const template = await prisma.workflowTemplate.findUnique({
+    where: { key: workflowTemplateKey },
+    include: {
+      steps: {
+        orderBy: { stepOrder: "asc" }
+      }
+    }
+  });
+  if (!template) {
+    return;
+  }
+
+  const employee = await prisma.companyEmployee.findFirst({
+    where: { companyId, displayName: template.defaultEmployeeName }
+  });
+  if (!employee) {
+    return;
+  }
+
+  const workflow = await prisma.workflow.create({
+    data: {
+      companyId,
+      name: template.name,
+      description: template.description,
+      triggerType: template.triggerType,
+      schedule: template.schedule,
+      approvalPolicy: template.approvalPolicy,
+      status: "ACTIVE"
+    }
+  });
+
+  await prisma.employeeWorkflow.create({
+    data: {
+      employeeId: employee.id,
+      workflowId: workflow.id,
+      enabled: true
+    }
+  });
+
+  for (const step of template.steps) {
+    await prisma.workflowStep.create({
+      data: {
+        workflowId: workflow.id,
+        skillId: step.skillId,
+        stepOrder: step.stepOrder,
+        stepType: step.stepType,
+        instruction: step.instruction,
+        inputMapping: step.inputMapping,
+        outputMapping: step.outputMapping,
+        requiresApproval: step.requiresApproval
+      }
+    });
+  }
 }
 
 export async function loginAction(formData: FormData) {
@@ -141,146 +208,29 @@ export async function logoutAction() {
 
 export async function createEmployeeAction(formData: FormData) {
   await assertSameOrigin();
-  const user = await requireUser();
+  const user = await requireCompanyContext();
   if (!canManageCompany(user)) {
     redirect("/dashboard");
   }
   await enforceRateLimitOrRedirect("employee_create", [`company:${user.companyId}`, `user:${user.id}`], "/employees");
   const templateId = String(formData.get("templateId") ?? "");
   const displayName = String(formData.get("displayName") ?? "").trim();
-  const requestedProfile = isKipekeeAdmin(user) ? String(formData.get("hermesProfile") ?? "").trim() : "";
-  const namespace = user.company.hermesNamespace ?? companyNamespace(user.company.slug);
-  const hermesProfile =
-    requestedProfile ||
-    (user.company.isolationTier === "PROFILE" ? hermesProfileName(namespace, displayName) : "");
-
+  const template = await prisma.employeeTemplate.findFirstOrThrow({ where: { id: templateId } });
   const employee = await prisma.companyEmployee.create({
     data: {
       companyId: user.companyId,
       templateId,
-      displayName,
-      hermesProfile: hermesProfile || null
+      displayName: displayName || template.name,
+      roleInstructions: defaultRoleInstructions(displayName || template.name, user.company.name)
     }
   });
-  await prisma.employeeProfileSetup.create({
-    data: {
-      companyId: user.companyId,
-      employeeId: employee.id,
-      status: "DRAFT",
-      draftSoul: defaultEmployeeSoul(displayName, user.company.name),
-      requestedBy: user.email
-    }
-  });
-
+  await assignDefaultSkills(employee.id, parseJsonArray(template.defaultSkills));
   await prisma.auditLog.create({
     data: {
+      workspaceId: user.workspaceId,
       companyId: user.companyId,
       actor: user.email,
       action: "employee.created",
-      target: displayName
-    }
-  });
-
-  revalidatePath("/employees");
-}
-
-export async function saveEmployeeProfileSetupAction(formData: FormData) {
-  await assertSameOrigin();
-  const user = await requireUser();
-  if (!canManageCompany(user)) {
-    redirect("/dashboard");
-  }
-  await enforceRateLimitOrRedirect("employee_profile_save", [`company:${user.companyId}`, `user:${user.id}`], "/employees");
-
-  const employeeId = String(formData.get("employeeId") ?? "");
-  const draftSoul = String(formData.get("draftSoul") ?? "").trim();
-  const status = String(formData.get("status") ?? "DRAFT");
-  const safeStatus = status === "PENDING_APPROVAL" ? "PENDING_APPROVAL" : "DRAFT";
-
-  if (!employeeId || !draftSoul) {
-    redirect("/employees?setup=missing");
-  }
-
-  const employee = await prisma.companyEmployee.findFirstOrThrow({
-    where: { id: employeeId, companyId: user.companyId }
-  });
-
-  await prisma.employeeProfileSetup.upsert({
-    where: { employeeId },
-    update: {
-      draftSoul,
-      status: safeStatus,
-      requestedBy: user.email,
-      approvedSoul: safeStatus === "DRAFT" ? null : undefined,
-      approvedAt: safeStatus === "DRAFT" ? null : undefined,
-      approvedBy: safeStatus === "DRAFT" ? null : undefined
-    },
-    create: {
-      companyId: user.companyId,
-      employeeId,
-      status: safeStatus,
-      draftSoul,
-      requestedBy: user.email
-    }
-  });
-
-  await prisma.auditLog.create({
-    data: {
-      companyId: user.companyId,
-      actor: user.email,
-      action: "employee.profile_setup.saved",
-      target: employee.displayName,
-      metadata: JSON.stringify({ status: safeStatus })
-    }
-  });
-
-  revalidatePath("/employees");
-}
-
-export async function approveEmployeeProfileSetupAction(formData: FormData) {
-  await assertSameOrigin();
-  const user = await requireUser();
-  if (!canManageCompany(user)) {
-    redirect("/dashboard");
-  }
-  await enforceRateLimitOrRedirect("employee_profile_approve", [`company:${user.companyId}`, `user:${user.id}`], "/employees");
-
-  const employeeId = String(formData.get("employeeId") ?? "");
-  const draftSoul = String(formData.get("draftSoul") ?? "").trim();
-  if (!employeeId || !draftSoul) {
-    redirect("/employees?setup=missing");
-  }
-
-  const employee = await prisma.companyEmployee.findFirstOrThrow({
-    where: { id: employeeId, companyId: user.companyId }
-  });
-
-  await prisma.employeeProfileSetup.upsert({
-    where: { employeeId },
-    update: {
-      draftSoul,
-      approvedSoul: draftSoul,
-      status: "APPROVED",
-      approvedBy: user.email,
-      approvedAt: new Date()
-    },
-    create: {
-      companyId: user.companyId,
-      employeeId,
-      status: "APPROVED",
-      draftSoul,
-      approvedSoul: draftSoul,
-      requestedBy: user.email,
-      approvedBy: user.email,
-      approvedAt: new Date()
-    }
-  });
-
-  await prisma.auditLog.create({
-    data: {
-      companyId: user.companyId,
-      actor: user.email,
-      action: "employee.profile_setup.approved",
       target: employee.displayName
     }
   });
@@ -288,12 +238,38 @@ export async function approveEmployeeProfileSetupAction(formData: FormData) {
   revalidatePath("/employees");
 }
 
+export async function saveEmployeeRoleAction(formData: FormData) {
+  await assertSameOrigin();
+  const user = await requireCompanyContext();
+  if (!canManageCompany(user)) {
+    redirect("/dashboard");
+  }
+  await enforceRateLimitOrRedirect("employee_profile_save", [`company:${user.companyId}`, `user:${user.id}`], "/employees");
+  const employeeId = String(formData.get("employeeId") ?? "");
+  const roleInstructions = String(formData.get("roleInstructions") ?? "").trim();
+  await prisma.companyEmployee.updateMany({
+    where: { id: employeeId, companyId: user.companyId },
+    data: { roleInstructions }
+  });
+  await prisma.auditLog.create({
+    data: {
+      workspaceId: user.workspaceId,
+      companyId: user.companyId,
+      actor: user.email,
+      action: "employee.role.updated",
+      target: employeeId
+    }
+  });
+  revalidatePath("/employees");
+}
+
 export async function uploadArtifactAction(formData: FormData) {
   await assertSameOrigin();
-  const user = await requireUser();
+  const user = await requireCompanyContext();
   await enforceRateLimitOrRedirect("artifact_upload", [`company:${user.companyId}`, `user:${user.id}`], "/artifacts");
   const file = formData.get("file");
   const addToMemory = formData.get("addToMemory") === "on";
+  const ownerType = String(formData.get("ownerType") ?? "COMPANY") === "WORKSPACE" ? "WORKSPACE" : "COMPANY";
   const employees = formData.getAll("employeeIds").map(String);
 
   if (!(file instanceof File) || file.size === 0) {
@@ -305,6 +281,7 @@ export async function uploadArtifactAction(formData: FormData) {
   if (file.type && !allowedUploadTypes.has(file.type) && !file.name.endsWith(".md")) {
     redirect("/artifacts?error=file-type");
   }
+
   const allowedEmployees = employees.length
     ? await prisma.companyEmployee.findMany({
         where: {
@@ -315,7 +292,6 @@ export async function uploadArtifactAction(formData: FormData) {
       })
     : [];
   const allowedEmployeeIds = new Set(allowedEmployees.map((employee) => employee.id));
-
   const artifactId = id("artifact");
   const bytes = Buffer.from(await file.arrayBuffer());
   const stored = await storeArtifactObject({
@@ -336,248 +312,328 @@ export async function uploadArtifactAction(formData: FormData) {
       ? bytes.toString("utf8").slice(0, 25000)
       : null;
 
-  const artifact = await prisma.artifact.create({
-    data: {
-      id: artifactId,
-      companyId: user.companyId,
-      uploadedBy: user.email,
-      title: file.name,
-      kind: file.type || "file",
-      storagePath: stored.storagePath,
-      storageProvider: stored.storageProvider,
-      fileSizeBytes: file.size,
-      extractedText,
-      memoryStatus: addToMemory ? "MEMORY_INDEXED" : "ARTIFACT_ONLY"
-    }
-  });
-
-  for (const employeeId of allowedEmployeeIds) {
-    await prisma.artifactAccess.create({
+  await prisma.$transaction(async (tx) => {
+    const collection = await tx.knowledgeCollection.create({
       data: {
-        artifactId: artifact.id,
-        employeeId,
-        canUseAsMemory: addToMemory
+        workspaceId: user.workspaceId,
+        companyId: ownerType === "COMPANY" ? user.companyId : null,
+        ownerType,
+        ownerId: ownerType === "COMPANY" ? user.companyId : user.workspaceId,
+        name: file.name,
+        category: "uploaded",
+        sensitivity: "NORMAL"
       }
     });
-  }
 
-  await prisma.auditLog.create({
-    data: {
-      companyId: user.companyId,
-      actor: user.email,
-      action: "artifact.uploaded",
-      target: file.name,
-      metadata: JSON.stringify({ addToMemory, employees: Array.from(allowedEmployeeIds) })
+    const artifact = await tx.artifact.create({
+      data: {
+        id: artifactId,
+        workspaceId: user.workspaceId,
+        companyId: ownerType === "COMPANY" ? user.companyId : null,
+        collectionId: collection.id,
+        uploadedByUserId: user.id,
+        title: file.name,
+        kind: file.type || "file",
+        storagePath: stored.storagePath,
+        storageProvider: stored.storageProvider,
+        fileSizeBytes: file.size,
+        extractedText,
+        memoryStatus: addToMemory ? "MEMORY_INDEXED" : "ARTIFACT_ONLY"
+      }
+    });
+
+    if (extractedText) {
+      await tx.knowledgeChunk.create({
+        data: {
+          artifactId: artifact.id,
+          collectionId: collection.id,
+          chunkIndex: 0,
+          text: extractedText.slice(0, 6000),
+          metadata: JSON.stringify({ source: "upload" })
+        }
+      });
     }
+
+    if (allowedEmployeeIds.size) {
+      await tx.artifactAccess.createMany({
+        data: Array.from(allowedEmployeeIds).map((employeeId) => ({
+          artifactId: artifact.id,
+          employeeId,
+          canUseAsMemory: addToMemory
+        })),
+        skipDuplicates: true
+      });
+    }
+
+    await tx.auditLog.create({
+      data: {
+        workspaceId: user.workspaceId,
+        companyId: user.companyId,
+        actor: user.email,
+        action: "artifact.uploaded",
+        target: file.name,
+        metadata: JSON.stringify({ ownerType, addToMemory, employees: Array.from(allowedEmployeeIds) })
+      }
+    });
   });
 
   revalidatePath("/artifacts");
 }
 
+async function buildJobInput(user: any, employeeId: string, prompt: string, sessionId?: string, workflowId?: string) {
+  const employee = await prisma.companyEmployee.findFirstOrThrow({
+    where: { id: employeeId, companyId: user.companyId },
+    include: {
+      skills: {
+        where: { enabled: true },
+        include: { skill: true }
+      },
+      workflows: {
+        where: { enabled: true },
+        include: { workflow: true }
+      }
+    }
+  });
+
+  const workflow = workflowId
+    ? employee.workflows.find((item) => item.workflowId === workflowId)?.workflow ?? null
+    : null;
+
+  if (workflowId && !workflow) {
+    redirect("/chat?error=workflow");
+  }
+
+  const runtime = await prisma.companyRuntime.findUniqueOrThrow({
+    where: { companyId: user.companyId }
+  });
+
+  const session = sessionId
+    ? await prisma.session.findFirst({
+        where: {
+          id: sessionId,
+          workspaceId: user.workspaceId,
+          companyId: user.companyId,
+          employeeId
+        }
+      })
+    : null;
+
+  const activeSession =
+    session ??
+    await prisma.session.create({
+      data: {
+        workspaceId: user.workspaceId,
+        companyId: user.companyId,
+        employeeId,
+        workflowId: workflow?.id,
+        title: prompt.slice(0, 80)
+      }
+    });
+
+  const access = await prisma.artifactAccess.findMany({
+    where: {
+      employeeId,
+      canUseAsMemory: true,
+      artifact: {
+        OR: [
+          { companyId: user.companyId },
+          { workspaceId: user.workspaceId, companyId: null }
+        ]
+      }
+    },
+    include: { artifact: true }
+  });
+
+  const memoryContext = buildMemoryContextFromArtifacts(access.map((item) => item.artifact));
+  const skillKeys = employee.skills.map((item) => item.skill.key);
+  const allowedToolsets = Array.from(new Set(employee.skills.flatMap((item) => parseJsonArray(item.skill.defaultToolsets))));
+  const brandVoice = await prisma.brandVoice.findUnique({ where: { companyId: user.companyId } });
+  const businessRules = await prisma.businessRule.findMany({
+    where: {
+      companyId: user.companyId,
+      active: true,
+      OR: [{ workflowId: null }, { workflowId: workflow?.id }]
+    },
+    orderBy: { severity: "desc" }
+  });
+
+  const jobData = {
+    workspaceId: user.workspaceId,
+    companyId: user.companyId,
+    companyRuntimeId: runtime.id,
+    employeeId: employee.id,
+    sessionId: activeSession.id,
+    workflowId: workflow?.id ?? null,
+    prompt,
+    employeeName: employee.displayName,
+    companyName: user.company.name,
+    runtimeProfile: runtime.hermesProfile,
+    skillKeys: JSON.stringify(skillKeys),
+    allowedArtifactIds: JSON.stringify(access.map((item) => item.artifactId)),
+    allowedToolsets: JSON.stringify(allowedToolsets.length ? allowedToolsets : ["chat", "documents", "memory", "audit"]),
+    memoryContext
+  };
+
+  return {
+    employee,
+    workflow,
+    runtime,
+    session: activeSession,
+    brandVoice,
+    businessRules,
+    access,
+    jobData: {
+      ...jobData,
+      jobSignature: signHermesJob(jobData)
+    }
+  };
+}
+
 export async function chatAction(formData: FormData) {
   await assertSameOrigin();
-  const user = await requireUser();
+  const user = await requireCompanyContext();
   const employeeId = String(formData.get("employeeId") ?? "");
   const prompt = String(formData.get("prompt") ?? "").trim();
   const existingSessionId = String(formData.get("sessionId") ?? "");
+  const workflowId = String(formData.get("workflowId") ?? "") || undefined;
 
   if (!employeeId || !prompt) {
     redirect("/chat");
   }
   await enforceRateLimitOrRedirect("chat_create", [`company:${user.companyId}`, `user:${user.id}`, `employee:${employeeId}`], "/chat");
+  assertHermesJobSigningConfigured();
 
-  const employee = await prisma.companyEmployee.findFirstOrThrow({
-    where: { id: employeeId, companyId: user.companyId }
-  });
+  const { employee, session, jobData } = await buildJobInput(user, employeeId, prompt, existingSessionId, workflowId);
 
-  const existingSession = existingSessionId
-    ? await prisma.session.findFirst({
-        where: {
-          id: existingSessionId,
-          companyId: user.companyId
-        }
-      })
-    : null;
-  const session =
-    existingSession?.employeeId === employeeId
-      ? existingSession
-      : await prisma.session.create({
-          data: {
-            companyId: user.companyId,
-            employeeId,
-            title: prompt.slice(0, 80)
-          }
-        });
+  await prisma.$transaction(async (tx) => {
+    await tx.message.create({
+      data: {
+        sessionId: session.id,
+        role: "user",
+        content: prompt
+      }
+    });
+    await tx.session.update({
+      where: { id: session.id },
+      data: { updatedAt: new Date() }
+    });
 
-  await prisma.message.create({
-    data: {
-      sessionId: session.id,
-      role: "user",
-      content: prompt
-    }
-  });
-  await prisma.session.update({
-    where: { id: session.id },
-    data: { updatedAt: new Date() }
-  });
+    const job = await tx.hermesJob.create({
+      data: {
+        ...jobData,
+        status: "PENDING"
+      }
+    });
 
-  const access = await prisma.artifactAccess.findMany({
-    where: { employeeId, canUseAsMemory: true },
-    include: { artifact: true }
-  });
-
-  const memoryContext = buildMemoryContextFromArtifacts(access.map((item) => item.artifact));
-
-  const task = {
-    companyId: user.companyId,
-    companyName: user.company.name,
-    isolationTier: user.company.isolationTier,
-    hermesNamespace: user.company.hermesNamespace,
-    agentId: employee.id,
-    sessionId: session.id,
-    employeeName: employee.displayName,
-    hermesProfile: employee.hermesProfile,
-    prompt,
-    allowedArtifactIds: access.map((item) => item.artifactId),
-    allowedToolsets: ["chat", "documents", "memory", "audit"],
-    memoryContext
-  };
-
-  const jobData = signedHermesJobData({
-      companyId: task.companyId,
-      employeeId: task.agentId,
-      sessionId: task.sessionId,
-      prompt: task.prompt,
-      employeeName: task.employeeName ?? employee.displayName,
-      hermesProfile: task.hermesProfile,
-      companyName: task.companyName ?? user.company.name,
-      isolationTier: task.isolationTier ?? "SHARED",
-      hermesNamespace: task.hermesNamespace,
-      allowedArtifactIds: JSON.stringify(task.allowedArtifactIds),
-      allowedToolsets: JSON.stringify(task.allowedToolsets),
-      memoryContext: task.memoryContext
-  });
-
-  const job = await prisma.hermesJob.create({
-    data: {
-      ...jobData,
-      status: "PENDING"
-    }
-  });
-
-  await prisma.auditLog.create({
-    data: {
-      companyId: user.companyId,
-      actor: user.email,
-      action: "chat.queued",
-      target: employee.displayName,
-      metadata: JSON.stringify({ jobId: job.id, executionMode: "queue" })
-    }
+    await tx.auditLog.create({
+      data: {
+        workspaceId: user.workspaceId,
+        companyId: user.companyId,
+        actor: user.email,
+        action: "chat.queued",
+        target: employee.displayName,
+        metadata: JSON.stringify({ jobId: job.id, executionMode: "queue", runtimeProfile: job.runtimeProfile })
+      }
+    });
   });
 
   revalidatePath("/chat");
   redirect(`/chat?session=${session.id}`);
 }
 
-export async function runLoopNowAction(formData: FormData) {
+export async function runWorkflowNowAction(formData: FormData) {
   await assertSameOrigin();
-  const user = await requireUser();
+  const user = await requireCompanyContext();
   if (!canManageCompany(user)) {
     redirect("/dashboard");
   }
-  await enforceRateLimitOrRedirect("loop_run", [`company:${user.companyId}`, `user:${user.id}`], "/loops");
-  const loopId = String(formData.get("loopId"));
+  await enforceRateLimitOrRedirect("loop_run", [`company:${user.companyId}`, `user:${user.id}`], "/workflows");
+  const workflowId = String(formData.get("workflowId"));
 
-  const loop = await prisma.businessLoop.findFirstOrThrow({
-    where: { id: loopId, companyId: user.companyId },
-    include: { employee: true }
+  const employeeWorkflow = await prisma.employeeWorkflow.findFirstOrThrow({
+    where: {
+      workflowId,
+      workflow: { companyId: user.companyId },
+      enabled: true
+    },
+    include: { employee: true, workflow: true }
   });
 
-  const access = await prisma.artifactAccess.findMany({
-    where: { employeeId: loop.employeeId, canUseAsMemory: true },
-    include: { artifact: true }
-  });
+  assertHermesJobSigningConfigured();
 
-  const memoryContext = buildMemoryContextFromArtifacts(access.map((item) => item.artifact));
-
-  const session = await prisma.session.create({
-    data: {
-      companyId: user.companyId,
-      employeeId: loop.employeeId,
-      title: `Loop: ${loop.name}`
-    }
-  });
-  const jobData = signedHermesJobData({
-      companyId: user.companyId,
-      employeeId: loop.employeeId,
-      sessionId: session.id,
-      prompt: `Run the scheduled business loop: ${loop.name}. Prepare the result for human approval.`,
-      employeeName: loop.employee.displayName,
-      hermesProfile: loop.employee.hermesProfile,
-      companyName: user.company.name,
-      isolationTier: user.company.isolationTier,
-      hermesNamespace: user.company.hermesNamespace,
-      allowedArtifactIds: JSON.stringify(access.map((item) => item.artifactId)),
-      allowedToolsets: JSON.stringify(["chat", "documents", "memory", "audit"]),
-      memoryContext
-  });
-
+  const prompt = `Run the workflow: ${employeeWorkflow.workflow.name}. Prepare the result for human approval.`;
+  const { session, jobData } = await buildJobInput(user, employeeWorkflow.employeeId, prompt, undefined, workflowId);
   await prisma.hermesJob.create({
     data: {
       ...jobData,
       status: "PENDING"
     }
   });
-
   await prisma.auditLog.create({
     data: {
+      workspaceId: user.workspaceId,
       companyId: user.companyId,
       actor: user.email,
-      action: "loop.queued",
-      target: loop.name,
+      action: "workflow.queued",
+      target: employeeWorkflow.workflow.name,
       metadata: JSON.stringify({ sessionId: session.id })
     }
   });
 
-  revalidatePath("/loops");
+  revalidatePath("/workflows");
   revalidatePath("/approvals");
   redirect(`/chat?session=${session.id}`);
 }
 
-export async function createLoopAction(formData: FormData) {
+export async function createWorkflowAction(formData: FormData) {
   await assertSameOrigin();
-  const user = await requireUser();
+  const user = await requireCompanyContext();
   if (!canManageCompany(user)) {
     redirect("/dashboard");
   }
-  await enforceRateLimitOrRedirect("loop_run", [`company:${user.companyId}`, `user:${user.id}`, "create"], "/loops");
+  await enforceRateLimitOrRedirect("loop_run", [`company:${user.companyId}`, `user:${user.id}`, "create"], "/workflows");
   const employeeId = String(formData.get("employeeId"));
   const employee = await prisma.companyEmployee.findFirst({
     where: { id: employeeId, companyId: user.companyId }
   });
   if (!employee) {
-    redirect("/loops?error=employee");
+    redirect("/workflows?error=employee");
   }
-  await prisma.businessLoop.create({
+  const workflow = await prisma.workflow.create({
     data: {
       companyId: user.companyId,
-      employeeId,
       name: String(formData.get("name")),
-      schedule: String(formData.get("schedule")),
-      status: "DRAFT",
-      requiresApproval: formData.get("requiresApproval") === "on",
-      outputTarget: String(formData.get("outputTarget") || "Approval inbox")
+      description: String(formData.get("description") || "Manual workflow"),
+      triggerType: String(formData.get("triggerType") || "MANUAL"),
+      schedule: String(formData.get("schedule") || ""),
+      approvalPolicy: formData.get("requiresApproval") === "on" ? "APPROVAL_REQUIRED" : "NO_APPROVAL",
+      status: "DRAFT"
     }
   });
-  revalidatePath("/loops");
+  await prisma.employeeWorkflow.create({
+    data: {
+      employeeId,
+      workflowId: workflow.id
+    }
+  });
+  await prisma.workflowStep.create({
+    data: {
+      workflowId: workflow.id,
+      stepOrder: 1,
+      instruction: String(formData.get("description") || "Complete the workflow using approved company context."),
+      requiresApproval: formData.get("requiresApproval") === "on"
+    }
+  });
+  revalidatePath("/workflows");
 }
 
 export async function createApprovalAction(formData: FormData) {
   await assertSameOrigin();
-  const user = await requireUser();
+  const user = await requireCompanyContext();
   await enforceRateLimitOrRedirect("approval_create", [`company:${user.companyId}`, `user:${user.id}`], "/approvals");
   await prisma.approvalRequest.create({
     data: {
+      workspaceId: user.workspaceId,
       companyId: user.companyId,
       title: String(formData.get("title")),
       details: String(formData.get("details")),
@@ -589,7 +645,7 @@ export async function createApprovalAction(formData: FormData) {
 
 export async function decideApprovalAction(formData: FormData) {
   await assertSameOrigin();
-  const user = await requireUser();
+  const user = await requireCompanyContext();
   if (!canManageCompany(user)) {
     redirect("/dashboard");
   }
@@ -597,7 +653,7 @@ export async function decideApprovalAction(formData: FormData) {
   const approvalId = String(formData.get("approvalId"));
   const status = String(formData.get("status"));
   await prisma.approvalRequest.updateMany({
-    where: { id: approvalId, companyId: user.companyId },
+    where: { id: approvalId, workspaceId: user.workspaceId, companyId: user.companyId },
     data: { status: ["APPROVED", "REJECTED"].includes(status) ? status : "PENDING", decidedAt: new Date() }
   });
   revalidatePath("/approvals");
@@ -612,36 +668,102 @@ export async function createCompanyAction(formData: FormData) {
   await enforceRateLimitOrRedirect("company_onboarding", [`user:${user.id}`], "/onboarding");
   const packageId = String(formData.get("packageId"));
   const isolationTier = safeIsolationTier(String(formData.get("isolationTier") || "PROFILE"));
+  const workspaceName = String(formData.get("workspaceName") || formData.get("companyName") || "").trim();
   const companyName = String(formData.get("companyName")).trim();
+  const companyType = safeOrganisationType(String(formData.get("companyType") || "COMPANY"));
+  const industryKey = String(formData.get("industryKey") || "general-business");
+  const countryCode = String(formData.get("countryCode") || "KE").trim().toUpperCase().slice(0, 2) || "KE";
   const ownerName = String(formData.get("ownerName") ?? "").trim();
   const ownerEmail = String(formData.get("ownerEmail") ?? "").trim().toLowerCase();
   let createdInviteToken: string | null = null;
-  if (!companyName) {
+  if (!companyName || !workspaceName) {
     redirect("/onboarding?error=company-name");
   }
 
-  const baseSlug = companyName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-  const slug = await availableSlug(baseSlug);
-  const namespace = companyNamespace(slug);
-  const homePath = isolationTier === "CONTAINER" || isolationTier === "DEPLOYMENT" ? hermesHomePath(namespace) : null;
+  const workspaceSlug = await availableSlug("workspace", slugify(workspaceName));
+  const companySlug = await availableSlug("company", slugify(companyName));
+  const runtimeNamespace = companyNamespace(companySlug);
+  const runtimeProfile = companyRuntimeProfileName(runtimeNamespace);
+  const homePath = isolationTier === "CONTAINER" || isolationTier === "DEPLOYMENT" ? hermesHomePath(runtimeNamespace) : null;
   const pkg = await prisma.onboardingPackage.findUniqueOrThrow({ where: { id: packageId } });
+  const industryTemplate = await prisma.industryTemplate.findFirst({
+    where: { key: industryKey, active: true },
+    include: { workflows: { include: { workflowTemplate: true } } }
+  });
   const includedEmployeeCount = pkg.includedEmployees ?? 0;
-  const includedTemplateNames = employeeTemplates.slice(0, includedEmployeeCount);
+  const industryEmployeeNames = parseJsonArray(industryTemplate?.recommendedEmployees);
+  const baseEmployeeNames = industryEmployeeNames.length
+    ? industryEmployeeNames
+    : employeeTemplates.map((template) => template.name);
+  const includedTemplateNames = (includedEmployeeCount ? baseEmployeeNames.slice(0, includedEmployeeCount) : baseEmployeeNames).filter(
+    (name, index, values) => values.indexOf(name) === index
+  );
+  const collectionNames = (parseJsonArray(industryTemplate?.knowledgeCollections).length
+    ? parseJsonArray(industryTemplate?.knowledgeCollections)
+    : ["Organization profile", "Company knowledge"]).filter((name, index, values) => values.indexOf(name) === index);
+  const businessRuleTexts = (parseJsonArray(industryTemplate?.businessRules).length
+    ? parseJsonArray(industryTemplate?.businessRules)
+    : ["AI employees can draft external messages and actions, but humans must approve before sending."]).filter(
+    (rule, index, values) => values.indexOf(rule) === index
+  );
+  const workflowTemplateKeys = industryTemplate?.workflows.length
+    ? industryTemplate.workflows.map((workflow) => workflow.workflowTemplate.key)
+    : starterWorkflowTemplates.map((workflow) => workflow.key);
   const templates = await prisma.employeeTemplate.findMany({
     where: { name: { in: includedTemplateNames } }
   });
   const templatesByName = new Map(templates.map((template) => [template.name, template]));
+  let createdCompanyId: string | null = null;
+  let createdWorkspaceId: string | null = null;
 
   await prisma.$transaction(async (tx) => {
+    const workspace = await tx.workspace.create({
+      data: {
+        id: id("workspace"),
+        name: workspaceName,
+        slug: workspaceSlug,
+        type: "BUSINESS_GROUP",
+        status: "ACTIVE"
+      }
+    });
+
     const company = await tx.company.create({
       data: {
         id: id("company"),
+        workspaceId: workspace.id,
         name: companyName,
-        slug,
+        slug: companySlug,
+        type: companyType,
+        industryKey: industryTemplate?.key ?? industryKey,
+        countryCode,
         status: "TRIAL",
         isolationTier,
-        hermesNamespace: namespace,
-        hermesHomePath: homePath,
+        hermesNamespace: runtimeNamespace,
+        runtime: {
+          create: {
+            workspaceId: workspace.id,
+            runtimeType: isolationTier,
+            hermesProfile: runtimeProfile,
+            hermesHomePath: homePath,
+            status: "PENDING"
+          }
+        },
+        brandVoice: {
+          create: {
+            tone: industryTemplate?.brandVoiceTone ?? "Clear, warm, professional",
+            styleRules: industryTemplate?.brandVoiceRules ?? "Use simple business language and ask for missing context.",
+            forbiddenWords: "Do not reveal platform infrastructure or private deployment details.",
+            formattingPreferences: "Use short answers first, then details when useful."
+          }
+        },
+        businessRules: {
+          create: businessRuleTexts.map((ruleText, index) => ({
+            name: index === 0 ? "Approval-first external actions" : `Industry rule ${index + 1}`,
+            category: "security",
+            ruleText,
+            severity: index === 0 ? "HIGH" : "NORMAL"
+          }))
+        },
         subscription: {
           create: {
             onboardingPackageId: packageId,
@@ -652,19 +774,37 @@ export async function createCompanyAction(formData: FormData) {
         },
         audits: {
           create: {
+            workspaceId: workspace.id,
             actor: user.email,
             action: "company.onboarded",
             target: companyName,
             metadata: JSON.stringify({
+              workspace: workspaceName,
+              organisationType: companyType,
+              industry: industryTemplate?.key ?? industryKey,
+              countryCode,
               package: pkg.name,
               includedEmployees: includedEmployeeCount,
               isolationTier,
-              hermesNamespace: namespace,
-              hermesHomePath: homePath
+              runtimeProfile
             })
           }
         }
       }
+    });
+    createdCompanyId = company.id;
+    createdWorkspaceId = workspace.id;
+
+    await tx.knowledgeCollection.createMany({
+      data: collectionNames.map((name) => ({
+        workspaceId: workspace.id,
+        companyId: name === "Organization profile" ? null : company.id,
+        ownerType: name === "Organization profile" ? "WORKSPACE" : "COMPANY",
+        ownerId: name === "Organization profile" ? workspace.id : company.id,
+        name,
+        category: slugify(name),
+        sensitivity: "NORMAL"
+      }))
     });
 
     if (ownerName && ownerEmail) {
@@ -673,6 +813,7 @@ export async function createCompanyAction(formData: FormData) {
       createdInviteToken = token;
       await tx.teamInvite.create({
         data: {
+          workspaceId: workspace.id,
           companyId: company.id,
           name: ownerName,
           email: ownerEmail,
@@ -683,41 +824,31 @@ export async function createCompanyAction(formData: FormData) {
           maxOpenCount: inviteMaxOpenCount()
         }
       });
-
-      await tx.auditLog.create({
-        data: {
-          companyId: company.id,
-          actor: user.email,
-          action: "client.owner.invited",
-          target: ownerEmail
-        }
-      });
     }
 
     for (const templateName of includedTemplateNames) {
       const template = templatesByName.get(templateName);
+      const templateConfig = employeeTemplates.find((item) => item.name === templateName);
       if (!template) {
         continue;
       }
-
       const employee = await tx.companyEmployee.create({
         data: {
           companyId: company.id,
           templateId: template.id,
           displayName: templateName,
-          hermesProfile: isolationTier === "PROFILE" ? hermesProfileName(namespace, templateName) : null
+          roleInstructions: defaultRoleInstructions(templateName, company.name)
         }
       });
-
-      await tx.employeeProfileSetup.create({
-        data: {
-          companyId: company.id,
-          employeeId: employee.id,
-          status: "DRAFT",
-          draftSoul: defaultEmployeeSoul(templateName, company.name),
-          requestedBy: user.email
-        }
-      });
+      const skills = await tx.skill.findMany({ where: { key: { in: templateConfig?.skills ?? [] } } });
+      for (const skill of skills) {
+        await tx.employeeSkill.create({
+          data: {
+            employeeId: employee.id,
+            skillId: skill.id
+          }
+        });
+      }
     }
 
     if (pkg.priceKes) {
@@ -731,27 +862,27 @@ export async function createCompanyAction(formData: FormData) {
         }
       });
     }
-
-    if (pkg.loopsEnabled && includedTemplateNames.includes("Marketing Manager")) {
-      const marketingEmployee = await tx.companyEmployee.findFirst({
-        where: { companyId: company.id, displayName: "Marketing Manager" }
-      });
-
-      if (marketingEmployee) {
-        await tx.businessLoop.create({
-          data: {
-            companyId: company.id,
-            employeeId: marketingEmployee.id,
-            name: "Weekly business growth plan",
-            schedule: "Every Monday 09:00 Africa/Nairobi",
-            status: "DRAFT",
-            requiresApproval: true,
-            outputTarget: "Approval inbox"
-          }
-        });
-      }
-    }
   });
+
+  if (createdCompanyId && pkg.loopsEnabled) {
+    for (const workflowTemplateKey of workflowTemplateKeys) {
+      await installWorkflowTemplate(createdCompanyId, workflowTemplateKey);
+    }
+  }
+
+  if (createdCompanyId) {
+    const provisionResult = await provisionCompanyRuntimeProfile(createdCompanyId);
+    await prisma.auditLog.create({
+      data: {
+        workspaceId: createdWorkspaceId,
+        companyId: createdCompanyId,
+        actor: user.email,
+        action: provisionResult.ok ? "runtime.provisioned" : "runtime.provision.deferred",
+        target: runtimeProfile,
+        metadata: JSON.stringify(provisionResult)
+      }
+    });
+  }
 
   revalidatePath("/onboarding");
   if (createdInviteToken) {
@@ -762,19 +893,25 @@ export async function createCompanyAction(formData: FormData) {
 
 export async function createInvoiceAction(formData: FormData) {
   await assertSameOrigin();
-  const user = await requireUser();
-  if (!isKipekeeAdmin(user)) {
+  const user = await requireCompanyContext();
+  if (!canManageBilling(user)) {
     redirect("/dashboard");
   }
   await enforceRateLimitOrRedirect("invoice_create", [`user:${user.id}`], "/billing");
-  const companyId = String(formData.get("companyId") || user.companyId);
-  const company = await prisma.company.findUnique({ where: { id: companyId } });
-  if (!company) {
+  const requestedCompanyId = String(formData.get("companyId") ?? "");
+  const invoiceCompanyId = isKipekeeAdmin(user) && requestedCompanyId ? requestedCompanyId : user.companyId;
+  const invoiceCompany = await prisma.company.findFirst({
+    where: isKipekeeAdmin(user)
+      ? { id: invoiceCompanyId }
+      : { id: user.companyId, workspaceId: user.workspaceId },
+    select: { id: true }
+  });
+  if (!invoiceCompany) {
     redirect("/billing?error=company");
   }
   await prisma.invoice.create({
     data: {
-      companyId,
+      companyId: invoiceCompany.id,
       invoiceNo: String(formData.get("invoiceNo")),
       description: String(formData.get("description")),
       amountKes: Number(formData.get("amountKes")),
@@ -786,7 +923,7 @@ export async function createInvoiceAction(formData: FormData) {
 
 export async function planIntegrationAction(formData: FormData) {
   await assertSameOrigin();
-  const user = await requireUser();
+  const user = await requireCompanyContext();
   if (!canManageCompany(user)) {
     redirect("/dashboard");
   }
@@ -794,27 +931,20 @@ export async function planIntegrationAction(formData: FormData) {
   const provider = String(formData.get("provider"));
   const displayName = String(formData.get("displayName"));
   const scopes = String(formData.get("scopes"));
+  const accountEmail = String(formData.get("accountEmail") || "");
   if (!allowedIntegrationProviders.has(provider)) {
     redirect("/integrations?error=provider");
   }
 
-  await prisma.integrationConnection.upsert({
-    where: {
-      companyId_provider: {
-        companyId: user.companyId,
-        provider
-      }
-    },
-    update: {
-      displayName,
-      scopes,
-      status: "PLANNED",
-      connectedBy: user.email
-    },
-    create: {
+  await prisma.integrationConnection.create({
+    data: {
+      ownerType: "COMPANY",
+      ownerId: user.companyId,
+      workspaceId: user.workspaceId,
       companyId: user.companyId,
       provider,
       displayName,
+      accountEmail,
       scopes,
       status: "PLANNED",
       connectedBy: user.email
@@ -823,24 +953,63 @@ export async function planIntegrationAction(formData: FormData) {
 
   await prisma.auditLog.create({
     data: {
+      workspaceId: user.workspaceId,
       companyId: user.companyId,
       actor: user.email,
       action: "integration.planned",
       target: displayName,
-      metadata: JSON.stringify({ provider, scopes })
+      metadata: JSON.stringify({ provider, scopes, accountEmail })
     }
   });
 
   revalidatePath("/integrations");
 }
 
+export async function createMailboxAction(formData: FormData) {
+  await assertSameOrigin();
+  const user = await requireCompanyContext();
+  if (!canManageCompany(user)) {
+    redirect("/integrations");
+  }
+  const connectionId = String(formData.get("connectionId") ?? "");
+  const employeeId = String(formData.get("employeeId") ?? "");
+  const emailAddress = String(formData.get("emailAddress") ?? "").trim().toLowerCase();
+  const connection = await prisma.integrationConnection.findFirstOrThrow({
+    where: { id: connectionId, companyId: user.companyId, workspaceId: user.workspaceId }
+  });
+  const employee = await prisma.companyEmployee.findFirstOrThrow({
+    where: { id: employeeId, companyId: user.companyId }
+  });
+  const mailbox = await prisma.mailbox.create({
+    data: {
+      companyId: user.companyId,
+      integrationConnectionId: connection.id,
+      emailAddress,
+      displayName: String(formData.get("displayName") || emailAddress),
+      provider: connection.provider,
+      status: "PLANNED"
+    }
+  });
+  await prisma.mailboxAccess.create({
+    data: {
+      mailboxId: mailbox.id,
+      employeeId: employee.id,
+      canRead: true,
+      canDraft: true,
+      canRequestSend: true,
+      canSendWithoutApproval: false
+    }
+  });
+  revalidatePath("/integrations");
+}
+
 export async function createTeamInviteAction(formData: FormData) {
   await assertSameOrigin();
-  const user = await requireUser();
+  const user = await requireCompanyContext();
   if (!canManageTeam(user)) {
     redirect("/dashboard");
   }
-  await enforceRateLimitOrRedirect("team_invite_create", [`company:${user.companyId}`, `user:${user.id}`], "/team");
+  await enforceRateLimitOrRedirect("team_invite_create", [`workspace:${user.workspaceId}`, `user:${user.id}`], "/team");
 
   const name = String(formData.get("name") ?? "").trim();
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
@@ -856,6 +1025,7 @@ export async function createTeamInviteAction(formData: FormData) {
 
   await prisma.teamInvite.create({
     data: {
+      workspaceId: user.workspaceId,
       companyId: user.companyId,
       name,
       email,
@@ -869,6 +1039,7 @@ export async function createTeamInviteAction(formData: FormData) {
 
   await prisma.auditLog.create({
     data: {
+      workspaceId: user.workspaceId,
       companyId: user.companyId,
       actor: user.email,
       action: "team.user.invited",
@@ -884,17 +1055,17 @@ export async function createTeamInviteAction(formData: FormData) {
 
 export async function revokeTeamInviteAction(formData: FormData) {
   await assertSameOrigin();
-  const user = await requireUser();
+  const user = await requireCompanyContext();
   if (!canManageTeam(user)) {
     redirect("/dashboard");
   }
-  await enforceRateLimitOrRedirect("team_invite_revoke", [`company:${user.companyId}`, `user:${user.id}`], "/team");
+  await enforceRateLimitOrRedirect("team_invite_revoke", [`workspace:${user.workspaceId}`, `user:${user.id}`], "/team");
 
   const inviteId = String(formData.get("inviteId") ?? "");
   await prisma.teamInvite.updateMany({
     where: {
       id: inviteId,
-      companyId: user.companyId,
+      workspaceId: user.workspaceId,
       acceptedAt: null,
       revokedAt: null
     },
@@ -905,6 +1076,7 @@ export async function revokeTeamInviteAction(formData: FormData) {
   });
   await prisma.auditLog.create({
     data: {
+      workspaceId: user.workspaceId,
       companyId: user.companyId,
       actor: user.email,
       action: "team.invite.revoked",
@@ -928,46 +1100,57 @@ export async function acceptInviteAction(formData: FormData) {
 
   const invite = await prisma.teamInvite.findUnique({
     where: { tokenHash },
-    include: { company: true }
+    include: { workspace: true, company: true }
   });
 
-  if (!invite || invite.acceptedAt || invite.revokedAt || invite.expiresAt < new Date() || invite.openCount > invite.maxOpenCount) {
+  if (!invite || invite.acceptedAt || invite.revokedAt || invite.expiresAt < new Date() || invite.openCount >= invite.maxOpenCount) {
     redirect(`/invite/${token}?error=invalid`);
   }
 
   const existingUser = await prisma.user.findUnique({ where: { email: invite.email } });
-  if (existingUser && existingUser.companyId !== invite.companyId) {
-    redirect(`/invite/${token}?error=existing`);
-  }
-
-  if (existingUser) {
-    await prisma.user.update({
-      where: { id: existingUser.id },
-      data: {
-        name: invite.name,
-        passwordHash: hashPassword(password),
-        role: invite.role
-      }
-    });
-  } else {
-    await prisma.user.create({
-      data: {
-        companyId: invite.companyId,
-        name: invite.name,
-        email: invite.email,
-        passwordHash: hashPassword(password),
-        role: invite.role
-      }
-    });
-  }
+  const user = existingUser
+    ? await prisma.user.update({
+        where: { id: existingUser.id },
+        data: {
+          name: invite.name,
+          passwordHash: hashPassword(password)
+        }
+      })
+    : await prisma.user.create({
+        data: {
+          name: invite.name,
+          email: invite.email,
+          passwordHash: hashPassword(password),
+          role: invite.role
+        }
+      });
 
   await prisma.$transaction([
+    prisma.workspaceMember.upsert({
+      where: {
+        workspaceId_userId: {
+          workspaceId: invite.workspaceId,
+          userId: user.id
+        }
+      },
+      update: {
+        role: invite.role,
+        active: true
+      },
+      create: {
+        workspaceId: invite.workspaceId,
+        userId: user.id,
+        role: invite.role,
+        active: true
+      }
+    }),
     prisma.teamInvite.update({
       where: { id: invite.id },
       data: { acceptedAt: new Date() }
     }),
     prisma.auditLog.create({
       data: {
+        workspaceId: invite.workspaceId,
         companyId: invite.companyId,
         actor: invite.email,
         action: "team.invite.accepted",

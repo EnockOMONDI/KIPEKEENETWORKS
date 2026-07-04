@@ -4,13 +4,13 @@ import os from "os";
 import path from "path";
 import { prisma } from "../lib/db";
 import { hardenHermesClientConfig, minimalHermesClientConfig } from "../lib/hermes-profile-security";
-import { companyNamespace, hermesProfileName } from "../lib/isolation";
+import { companyNamespace, companyRuntimeProfileName } from "../lib/isolation";
 
 const hermesBin = process.env.HERMES_BIN || "hermes";
 const hermesRoot = process.env.HERMES_HOME || path.join(os.homedir(), ".kipekee-hermes");
 const profilesDir = path.join(hermesRoot, "profiles");
 const sharedProfile = process.env.KIPEKEE_SHARED_HERMES_PROFILE || "kipekeenetworksworker";
-const runtimeDir = process.env.KIPEKEE_HERMES_RUNTIME_DIR || path.join(os.tmpdir(), "kipekee-hermes-runtime");
+const runtimeDir = process.env.KIPEKEE_HERMES_RUNTIME_DIR || "/tmp/kipekee-hermes-runtime";
 const fallbackConfigPath = process.env.KIPEKEE_HERMES_CONFIG_SOURCE || path.join(os.homedir(), ".hermes", "config.yaml");
 
 function profileDir(profile: string) {
@@ -32,12 +32,23 @@ function ensureProfile(profile: string, description: string) {
       stdio: "inherit"
     });
   }
+
+  const profileYamlPath = path.join(profileDir(profile), "profile.yaml");
+  if (!existsSync(profileYamlPath)) {
+    writeFileSync(
+      profileYamlPath,
+      `description: ${JSON.stringify(description)}\ndescription_auto: false\n`
+    );
+    chmodSync(profileYamlPath, 0o600);
+  }
 }
 
 function writeSoul(profile: string, content: string) {
   mkdirSync(profileDir(profile), { recursive: true, mode: 0o700 });
   chmodSync(profileDir(profile), 0o700);
-  writeFileSync(path.join(profileDir(profile), "SOUL.md"), `${content.trim()}\n`);
+  const soulPath = path.join(profileDir(profile), "SOUL.md");
+  writeFileSync(soulPath, `${content.trim()}\n`);
+  chmodSync(soulPath, 0o600);
 }
 
 function sourceConfig() {
@@ -67,16 +78,34 @@ function hardenClientProfile(profile: string) {
   writeRestrictedConfig(configPath, hardenHermesClientConfig(rawConfig, runtimeDir));
 }
 
-function employeeSoul(employeeName: string, companyName: string, approvedSoul?: string | null) {
+function companySoul(company: {
+  name: string;
+  type: string;
+  brandVoice?: { tone: string; styleRules: string; formattingPreferences: string; forbiddenWords: string } | null;
+  businessRules: Array<{ name: string; ruleText: string }>;
+}) {
   return `
-# ${employeeName} - ${companyName}
+# ${company.name} Company Runtime
 
-${approvedSoul?.trim() || `You are ${employeeName}, a Kipekee Networks AI employee assigned to ${companyName}.`}
+This Hermes profile is the isolated company runtime for ${company.name}. It represents the company, not an individual AI employee.
 
-Rules:
-- Work only for ${companyName}.
-- Do not reveal internal infrastructure, repositories, branches, git state, deployment details, databases, local files, profile names, tenant metadata, worker state, or internal IDs.
-- Use only approved company memory and artifacts passed to you.
+Company type: ${company.type}
+
+Brand voice:
+${company.brandVoice ? [
+  `- Tone: ${company.brandVoice.tone}`,
+  `- Style: ${company.brandVoice.styleRules}`,
+  `- Formatting: ${company.brandVoice.formattingPreferences}`,
+  company.brandVoice.forbiddenWords ? `- Forbidden wording: ${company.brandVoice.forbiddenWords}` : ""
+].filter(Boolean).join("\n") : "- Not configured yet."}
+
+Business rules:
+${company.businessRules.length ? company.businessRules.map((rule) => `- ${rule.name}: ${rule.ruleText}`).join("\n") : "- Approval-first behavior for external actions."}
+
+Runtime rules:
+- Employee roles, workflows, skills, and knowledge permissions are supplied by Kipekee Networks for each task.
+- Work only for the assigned company and approved workspace/company context.
+- Never reveal internal infrastructure, repositories, branches, git state, deployment details, databases, local files, profile names, tenant metadata, worker state, or internal IDs.
 - Ask for the missing document, SOP, policy, example, or permission when company context is insufficient.
 - Prepare sensitive business actions for approval before execution.
 `;
@@ -103,7 +132,7 @@ async function main() {
 You are hidden infrastructure for Kipekee Networks. Customers must experience you as their assigned Kipekee AI employee, never as Hermes.
 
 Rules:
-- Obey the company scope, tenant namespace, employee role, allowed artifacts, and allowed tools in each request.
+- Obey the company scope, employee role, workflow, skills, allowed artifacts, and allowed tools in each request.
 - Never use or infer data from another company.
 - If memory context is missing, ask for the missing document or policy.
 - Draft sensitive external actions for approval instead of executing them.
@@ -113,36 +142,46 @@ Rules:
   hardenClientProfile(sharedProfile);
 
   const companies = await prisma.company.findMany({
-    where: { isolationTier: "PROFILE" },
-    include: { employees: { include: { profileSetup: true } } }
+    where: { isolationTier: { in: ["PROFILE", "CONTAINER", "DEPLOYMENT"] } },
+    include: { runtime: true, brandVoice: true, businessRules: { where: { active: true } } }
   });
 
   for (const company of companies) {
-    const namespace = company.hermesNamespace ?? companyNamespace(company.slug);
+    const runtimeNamespace = company.hermesNamespace ?? companyNamespace(company.slug);
+    const runtimeProfile = company.runtime?.hermesProfile ?? companyRuntimeProfileName(runtimeNamespace);
 
     if (!company.hermesNamespace) {
       await prisma.company.update({
         where: { id: company.id },
-        data: { hermesNamespace: namespace }
+        data: { hermesNamespace: runtimeNamespace }
       });
     }
 
-    for (const employee of company.employees) {
-      const profile = employee.hermesProfile ?? hermesProfileName(namespace, employee.displayName);
-      ensureProfile(profile, `${employee.displayName} for ${company.name} in Kipekee Networks.`);
-      writeSoul(profile, employeeSoul(employee.displayName, company.name, employee.profileSetup?.approvedSoul));
-      hardenClientProfile(profile);
-
-      if (!employee.hermesProfile) {
-        await prisma.companyEmployee.update({
-          where: { id: employee.id },
-          data: { hermesProfile: profile }
-        });
+    const runtime = await prisma.companyRuntime.upsert({
+      where: { companyId: company.id },
+      update: {
+        workspaceId: company.workspaceId,
+        runtimeType: company.isolationTier,
+        hermesProfile: runtimeProfile,
+        status: "READY",
+        provisionedAt: new Date()
+      },
+      create: {
+        workspaceId: company.workspaceId,
+        companyId: company.id,
+        runtimeType: company.isolationTier,
+        hermesProfile: runtimeProfile,
+        status: "READY",
+        provisionedAt: new Date()
       }
-    }
+    });
+
+    ensureProfile(runtime.hermesProfile, `${company.name} company runtime in Kipekee Networks.`);
+    writeSoul(runtime.hermesProfile, companySoul(company));
+    hardenClientProfile(runtime.hermesProfile);
   }
 
-  console.log(`Provisioned shared profile and ${companies.length} profile-isolated compan${companies.length === 1 ? "y" : "ies"}.`);
+  console.log(`Provisioned shared profile and ${companies.length} company runtime profile${companies.length === 1 ? "" : "s"}.`);
 }
 
 main()

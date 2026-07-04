@@ -35,7 +35,19 @@ export default async function InvitePage({
   }
   const invite = await prisma.teamInvite.findUnique({
     where: { tokenHash },
-    include: { company: true }
+    select: {
+      id: true,
+      acceptedAt: true,
+      company: { select: { name: true } },
+      email: true,
+      expiresAt: true,
+      maxOpenCount: true,
+      name: true,
+      openCount: true,
+      openedAt: true,
+      revokedAt: true,
+      role: true
+    }
   });
   const exceededOpenLimit = Boolean(invite && invite.openCount >= invite.maxOpenCount);
   if (invite && !rateLimited && !exceededOpenLimit && !invite.acceptedAt && !invite.revokedAt && invite.expiresAt >= new Date()) {
@@ -71,13 +83,13 @@ export default async function InvitePage({
           <h1 className="mt-2 text-3xl font-semibold">Accept invite</h1>
           {invalid ? (
             <div className="mt-5 rounded-md bg-red-50 px-3 py-3 text-sm leading-6 text-red-700">
-              This invite is {status}. Ask your company admin for a new invite.
+              This invite is {status}. Ask your organisation admin for a new invite.
             </div>
           ) : (
             <>
               <div className="mt-5 rounded-md bg-paper p-4 text-sm leading-6 text-graphite">
                 <p>
-                  Company: <span className="font-semibold text-ink">{invite.company.name}</span>
+                  Organisation: <span className="font-semibold text-ink">{invite.company?.name ?? "Workspace access"}</span>
                 </p>
                 <p>
                   Name: <span className="font-semibold text-ink">{invite.name}</span>
@@ -98,7 +110,7 @@ export default async function InvitePage({
               {error ? (
                 <div className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
                   {error === "existing"
-                    ? "This email is already attached to another company workspace. Ask Kipekee support to review access."
+                    ? "This email is already attached to another organisation workspace. Ask Kipekee support to review access."
                     : error === "rate-limit"
                       ? "Too many attempts. Please wait before trying again."
                       : "Passwords must match and be at least 8 characters."}

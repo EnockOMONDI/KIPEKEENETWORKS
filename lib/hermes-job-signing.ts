@@ -1,15 +1,17 @@
 import { createHmac, timingSafeEqual } from "crypto";
 
 export type HermesJobSigningPayload = {
+  workspaceId: string;
   companyId: string;
+  companyRuntimeId: string;
   employeeId: string;
   sessionId: string;
+  workflowId?: string | null;
   prompt: string;
   employeeName: string;
-  hermesProfile?: string | null;
   companyName: string;
-  isolationTier: string;
-  hermesNamespace?: string | null;
+  runtimeProfile: string;
+  skillKeys: string;
   allowedArtifactIds: string;
   allowedToolsets: string;
   memoryContext?: string | null;
@@ -28,17 +30,23 @@ function signingSecret() {
   return "dev-only-kipekee-job-signing-secret";
 }
 
+export function assertHermesJobSigningConfigured() {
+  signingSecret();
+}
+
 function canonicalPayload(payload: HermesJobSigningPayload) {
   return JSON.stringify({
+    workspaceId: payload.workspaceId,
     companyId: payload.companyId,
+    companyRuntimeId: payload.companyRuntimeId,
     employeeId: payload.employeeId,
     sessionId: payload.sessionId,
+    workflowId: payload.workflowId ?? null,
     prompt: payload.prompt,
     employeeName: payload.employeeName,
-    hermesProfile: payload.hermesProfile ?? null,
     companyName: payload.companyName,
-    isolationTier: payload.isolationTier,
-    hermesNamespace: payload.hermesNamespace ?? null,
+    runtimeProfile: payload.runtimeProfile,
+    skillKeys: payload.skillKeys,
     allowedArtifactIds: payload.allowedArtifactIds,
     allowedToolsets: payload.allowedToolsets,
     memoryContext: payload.memoryContext ?? null

@@ -1,25 +1,33 @@
 import { AppShell, Badge, Card, EmptyState, PageHeader } from "@/components/AppShell";
 import { SubmitButton } from "@/components/Interactive";
 import { uploadArtifactAction } from "@/lib/actions";
-import { requireUser } from "@/lib/auth";
+import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 
 export default async function ArtifactsPage() {
-  const user = await requireUser();
+  const user = await requireCompanyContext();
   const [employees, artifacts] = await Promise.all([
     prisma.companyEmployee.findMany({
       where: { companyId: user.companyId },
+      select: { id: true, displayName: true },
       orderBy: { displayName: "asc" }
     }),
     prisma.artifact.findMany({
       where: { companyId: user.companyId },
-      include: { access: { include: { employee: true } } },
+      select: {
+        id: true,
+        title: true,
+        kind: true,
+        fileSizeBytes: true,
+        memoryStatus: true,
+        access: { select: { id: true, employee: { select: { displayName: true } } } }
+      },
       orderBy: { createdAt: "desc" }
     })
   ]);
 
   return (
-    <AppShell companyName={user.company.name} companySlug={user.company.slug} userEmail={user.email} userRole={user.role}>
+    <AppShell companyName={user.company.name} companySlug={user.company.slug} userEmail={user.email} platformRole={user.role} userRole={user.memberRole ?? user.role}>
       <PageHeader
         eyebrow="Artifacts"
         title="Files and document memory"
@@ -76,7 +84,7 @@ export default async function ArtifactsPage() {
           ) : (
             <EmptyState
               title="No artifacts yet"
-              description="Upload company documents, SOPs, proposals, policies, or templates, then decide which AI employees can use them as memory."
+              description="Upload organisation documents, SOPs, proposals, policies, or templates, then decide which AI employees can use them as memory."
             />
           )}
         </div>

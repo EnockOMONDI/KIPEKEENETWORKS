@@ -16,101 +16,88 @@ export default async function SystemsPage() {
 
   const now = new Date();
   const staleJobCutoff = new Date(now.getTime() - staleJobMinutes * 60 * 1000);
-  const [
-    workers,
-    recentJobs,
-    jobCounts,
-    companies,
-    artifacts,
-    memoryArtifacts,
-    storageTotals,
-    memoryStorageTotals,
-    untrackedStorageFiles,
-    companyStorageRows,
-    companyMemoryStorageRows,
-    companyUntrackedRows,
-    storageCompanies,
-    pendingApprovals,
-    pendingInvites,
-    setupGaps,
-    profileGaps,
-    staleJobs,
-    failedJobsToday
-  ] = await Promise.all([
-    prisma.workerHeartbeat.findMany({ orderBy: { lastSeenAt: "desc" }, take: 12 }),
-    prisma.hermesJob.findMany({
-      include: {
-        company: true,
-        employee: true,
-        session: true
-      },
-      orderBy: { createdAt: "desc" },
-      take: 20
-    }),
-    prisma.hermesJob.groupBy({
-      by: ["status"],
-      _count: { status: true }
-    }),
-    prisma.company.count(),
-    prisma.artifact.count(),
-    prisma.artifact.count({ where: { memoryStatus: "MEMORY_INDEXED" } }),
-    prisma.artifact.aggregate({
-      _sum: { fileSizeBytes: true }
-    }),
-    prisma.artifact.aggregate({
-      where: { memoryStatus: "MEMORY_INDEXED" },
-      _sum: { fileSizeBytes: true }
-    }),
-    prisma.artifact.count({ where: { fileSizeBytes: 0 } }),
-    prisma.artifact.groupBy({
-      by: ["companyId"],
-      _count: { id: true },
-      _sum: { fileSizeBytes: true },
-      orderBy: { _sum: { fileSizeBytes: "desc" } }
-    }),
-    prisma.artifact.groupBy({
-      by: ["companyId"],
-      where: { memoryStatus: "MEMORY_INDEXED" },
-      _count: { id: true },
-      _sum: { fileSizeBytes: true }
-    }),
-    prisma.artifact.groupBy({
-      by: ["companyId"],
-      where: { fileSizeBytes: 0 },
-      _count: { id: true }
-    }),
-    prisma.company.findMany({
-      select: { id: true, name: true, slug: true },
-      orderBy: { name: "asc" }
-    }),
-    prisma.approvalRequest.count({ where: { status: "PENDING" } }),
-    prisma.teamInvite.count({
-      where: {
-        acceptedAt: null,
-        revokedAt: null,
-        expiresAt: { gt: now }
-      }
-    }),
-    prisma.employeeProfileSetup.count({ where: { status: { not: "APPROVED" } } }),
-    prisma.companyEmployee.count({
-      where: {
-        company: { isolationTier: "PROFILE" },
-        hermesProfile: null
-      }
-    }),
-    prisma.hermesJob.count({
-      where: {
-        status: "RUNNING",
-        updatedAt: { lt: staleJobCutoff }
-      }
-    }),
-    prisma.hermesJob.count({
-      where: {
-        status: "FAILED",
-        updatedAt: { gt: new Date(now.getTime() - 24 * 60 * 60 * 1000) }
-      }
-    })
-  ]);
+  const workers = await prisma.workerHeartbeat.findMany({
+    orderBy: { lastSeenAt: "desc" },
+    select: {
+      id: true,
+      currentJobId: true,
+      lastSeenAt: true,
+      runtime: true,
+      workerId: true
+    },
+    take: 12
+  });
+  const recentJobs = await prisma.hermesJob.findMany({
+    select: {
+      id: true,
+      createdAt: true,
+      prompt: true,
+      sessionId: true,
+      status: true,
+      company: { select: { name: true } },
+      employee: { select: { displayName: true } }
+    },
+    orderBy: { createdAt: "desc" },
+    take: 20
+  });
+  const jobCounts = await prisma.hermesJob.groupBy({
+    by: ["status"],
+    _count: { status: true }
+  });
+  const companies = await prisma.company.count();
+  const artifacts = await prisma.artifact.count();
+  const memoryArtifacts = await prisma.artifact.count({ where: { memoryStatus: "MEMORY_INDEXED" } });
+  const storageTotals = await prisma.artifact.aggregate({
+    _sum: { fileSizeBytes: true }
+  });
+  const memoryStorageTotals = await prisma.artifact.aggregate({
+    where: { memoryStatus: "MEMORY_INDEXED" },
+    _sum: { fileSizeBytes: true }
+  });
+  const untrackedStorageFiles = await prisma.artifact.count({ where: { fileSizeBytes: 0 } });
+  const companyStorageRows = await prisma.artifact.groupBy({
+    by: ["companyId"],
+    _count: { id: true },
+    _sum: { fileSizeBytes: true },
+    orderBy: { _sum: { fileSizeBytes: "desc" } }
+  });
+  const companyMemoryStorageRows = await prisma.artifact.groupBy({
+    by: ["companyId"],
+    where: { memoryStatus: "MEMORY_INDEXED" },
+    _count: { id: true },
+    _sum: { fileSizeBytes: true }
+  });
+  const companyUntrackedRows = await prisma.artifact.groupBy({
+    by: ["companyId"],
+    where: { fileSizeBytes: 0 },
+    _count: { id: true }
+  });
+  const storageCompanies = await prisma.company.findMany({
+    select: { id: true, name: true, slug: true },
+    orderBy: { name: "asc" }
+  });
+  const pendingApprovals = await prisma.approvalRequest.count({ where: { status: "PENDING" } });
+  const pendingInvites = await prisma.teamInvite.count({
+    where: {
+      acceptedAt: null,
+      revokedAt: null,
+      expiresAt: { gt: now }
+    }
+  });
+  const runtimeGaps = await prisma.company.count({ where: { runtime: null } });
+  const runtimePending = await prisma.companyRuntime.count({ where: { status: { notIn: ["ACTIVE", "READY"] } } });
+  const staleJobs = await prisma.hermesJob.count({
+    where: {
+      status: "RUNNING",
+      updatedAt: { lt: staleJobCutoff }
+    }
+  });
+  const failedJobsToday = await prisma.hermesJob.count({
+    where: {
+      status: "FAILED",
+      updatedAt: { gt: new Date(now.getTime() - 24 * 60 * 60 * 1000) }
+    }
+  });
 
   const counts = new Map(jobCounts.map((item) => [item.status, item._count.status]));
   const onlineWorkers = workers.filter((worker) => now.getTime() - worker.lastSeenAt.getTime() < onlineWindowMs);
@@ -129,8 +116,8 @@ export default async function SystemsPage() {
   const companyUntrackedStorage = new Map(companyUntrackedRows.map((row) => [row.companyId, row._count.id]));
 
   const warnings = [
-    setupGaps ? `${setupGaps} employee setup brief${setupGaps === 1 ? " needs" : "s need"} approval.` : null,
-    profileGaps ? `${profileGaps} profile-isolated employee${profileGaps === 1 ? " is" : "s are"} missing a profile.` : null,
+    runtimeGaps ? `${runtimeGaps} compan${runtimeGaps === 1 ? "y is" : "ies are"} missing a runtime.` : null,
+    runtimePending ? `${runtimePending} organisation runtime${runtimePending === 1 ? " is" : "s are"} not active yet.` : null,
     staleJobs ? `${staleJobs} Hermes job${staleJobs === 1 ? " is" : "s are"} stuck in RUNNING.` : null,
     failedJobsToday ? `${failedJobsToday} job${failedJobsToday === 1 ? " has" : "s have"} failed in the last 24 hours.` : null,
     untrackedStorageFiles ? `${untrackedStorageFiles} older file${untrackedStorageFiles === 1 ? " has" : "s have"} no recorded storage size yet.` : null,
@@ -138,7 +125,7 @@ export default async function SystemsPage() {
   ].filter((warning): warning is string => Boolean(warning));
 
   return (
-    <AppShell companyName={user.company.name} companySlug={user.company.slug} userEmail={user.email} userRole={user.role}>
+    <AppShell companyName={user.company?.name ?? "Kipekee Studio"} companySlug={user.company?.slug ?? "kipekee-studio"} userEmail={user.email} platformRole={user.role} userRole={user.memberRole ?? user.role}>
       <PageHeader
         eyebrow="Operations"
         title="Systems"
@@ -153,7 +140,7 @@ export default async function SystemsPage() {
       </div>
 
       <div className="mt-5 grid gap-4 md:grid-cols-4">
-        <Metric label="Companies" value={companies} />
+        <Metric label="Organisations" value={companies} />
         <Metric label="Documents" value={artifacts} />
         <Metric label="Memory files" value={memoryArtifacts} />
         <Metric label="Tracked storage" value={formatBytes(trackedStorageBytes)} />
@@ -174,7 +161,7 @@ export default async function SystemsPage() {
                 <thead className="border-b border-black/10 text-xs uppercase tracking-[0.12em] text-graphite">
                   <tr>
                     <th className="py-3 pr-4">Status</th>
-                    <th className="py-3 pr-4">Company</th>
+                    <th className="py-3 pr-4">Organisation</th>
                     <th className="py-3 pr-4">Employee</th>
                     <th className="py-3 pr-4">Request</th>
                     <th className="py-3 pr-4">Created</th>
@@ -208,15 +195,15 @@ export default async function SystemsPage() {
 
         <Card>
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-xl font-semibold">Storage by company</h2>
-            <Badge>{companyStorageRows.length} companies</Badge>
+            <h2 className="text-xl font-semibold">Storage by organisation</h2>
+            <Badge>{companyStorageRows.length} organisations</Badge>
           </div>
           {companyStorageRows.length ? (
             <div className="mt-4 overflow-x-auto">
               <table className="w-full min-w-[720px] text-left text-sm">
                 <thead className="border-b border-black/10 text-xs uppercase tracking-[0.12em] text-graphite">
                   <tr>
-                    <th className="py-3 pr-4">Company</th>
+                    <th className="py-3 pr-4">Organisation</th>
                     <th className="py-3 pr-4">Files</th>
                     <th className="py-3 pr-4">Tracked storage</th>
                     <th className="py-3 pr-4">Memory files</th>
@@ -226,15 +213,16 @@ export default async function SystemsPage() {
                 </thead>
                 <tbody className="divide-y divide-black/10">
                   {companyStorageRows.map((row) => {
-                    const company = companyNames.get(row.companyId);
+                    const companyKey = row.companyId ?? "workspace";
+                    const company = row.companyId ? companyNames.get(row.companyId) : null;
                     const memory = companyMemoryStorage.get(row.companyId) ?? { files: 0, bytes: 0 };
                     const untracked = companyUntrackedStorage.get(row.companyId) ?? 0;
 
                     return (
-                      <tr key={row.companyId}>
+                      <tr key={companyKey}>
                         <td className="py-3 pr-4">
-                          <p className="font-semibold">{company?.name ?? row.companyId}</p>
-                          <p className="mt-1 text-xs text-graphite">{company?.slug ?? "unknown"}</p>
+                          <p className="font-semibold">{company?.name ?? "Workspace shared"}</p>
+                          <p className="mt-1 text-xs text-graphite">{company?.slug ?? "shared-knowledge"}</p>
                         </td>
                         <td className="py-3 pr-4">{row._count.id}</td>
                         <td className="py-3 pr-4">{formatBytes(row._sum.fileSizeBytes ?? 0)}</td>
@@ -248,7 +236,7 @@ export default async function SystemsPage() {
               </table>
             </div>
           ) : (
-            <EmptyState title="No storage yet" description="Uploaded company documents will appear here with per-company storage totals." />
+            <EmptyState title="No storage yet" description="Uploaded organisation documents will appear here with per-organisation storage totals." />
           )}
         </Card>
         </div>
@@ -312,8 +300,8 @@ export default async function SystemsPage() {
             <div className="mt-4 space-y-3 text-sm text-graphite">
               <p>Open invites: {pendingInvites}</p>
               <p>Pending approvals: {pendingApprovals}</p>
-              <p>Profile setup gaps: {setupGaps}</p>
-              <p>Profile mapping gaps: {profileGaps}</p>
+              <p>Runtime gaps: {runtimeGaps}</p>
+              <p>Runtimes not active: {runtimePending}</p>
               <p>Failed jobs today: {failedJobsToday}</p>
             </div>
           </Card>

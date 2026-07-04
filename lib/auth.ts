@@ -6,6 +6,48 @@ import { clearRateLimit, enforceRateLimit, RateLimitError } from "./rate-limit";
 import { hashToken, verifyPassword } from "./security";
 
 const sessionCookieName = "kipekee_session";
+const workspaceCookieName = "kipekee_workspace";
+const companyCookieName = "kipekee_company";
+
+export type AppUser = Awaited<ReturnType<typeof currentUser>> extends infer T ? NonNullable<T> : never;
+
+const userContextSelect = {
+  id: true,
+  name: true,
+  email: true,
+  role: true,
+  memberships: {
+    where: { active: true },
+    select: {
+      id: true,
+      workspaceId: true,
+      role: true,
+      workspace: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          type: true,
+          status: true,
+          companies: {
+            orderBy: { createdAt: "asc" },
+            select: {
+              id: true,
+              workspaceId: true,
+              name: true,
+              slug: true,
+              type: true,
+              status: true,
+              isolationTier: true,
+              hermesNamespace: true
+            }
+          }
+        }
+      }
+    },
+    orderBy: { createdAt: "asc" }
+  }
+} as const;
 
 export async function login(email: string, password: string) {
   const normalizedEmail = email.trim().toLowerCase();
@@ -19,8 +61,7 @@ export async function login(email: string, password: string) {
   }
 
   const user = await prisma.user.findUnique({
-    where: { email: normalizedEmail },
-    include: { company: true }
+    where: { email: normalizedEmail }
   });
 
   if (!user || !verifyPassword(password, user.passwordHash)) {
@@ -61,20 +102,59 @@ export async function logout() {
     });
   }
   cookieStore.delete(sessionCookieName);
+  cookieStore.delete(workspaceCookieName);
+  cookieStore.delete(companyCookieName);
+}
+
+function buildUserContext(user: any, preferredWorkspaceId?: string, preferredCompanyId?: string) {
+  if (!user) {
+    return null;
+  }
+
+  const membership =
+    user.memberships.find((item: any) => item.workspaceId === preferredWorkspaceId) ??
+    user.memberships[0] ??
+    null;
+  const workspace = membership?.workspace ?? null;
+  const company =
+    workspace?.companies.find((item: any) => item.id === preferredCompanyId) ??
+    workspace?.companies[0] ??
+    null;
+
+  return {
+    ...user,
+    workspace,
+    workspaceId: workspace?.id ?? "",
+    company,
+    companyId: company?.id ?? "",
+    memberRole: membership?.role ?? user.role
+  };
+}
+
+async function hydrateUser(userId: string, preferredWorkspaceId?: string, preferredCompanyId?: string) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: userContextSelect
+  });
+
+  return buildUserContext(user, preferredWorkspaceId, preferredCompanyId);
 }
 
 export async function currentUser() {
   const cookieStore = await cookies();
   const token = cookieStore.get(sessionCookieName)?.value;
+  const preferredWorkspaceId = cookieStore.get(workspaceCookieName)?.value;
+  const preferredCompanyId = cookieStore.get(companyCookieName)?.value;
   if (!token) {
     return null;
   }
 
   const session = await prisma.authSession.findUnique({
     where: { tokenHash: hashToken(token) },
-    include: {
+    select: {
+      expiresAt: true,
       user: {
-        include: { company: true }
+        select: userContextSelect
       }
     }
   });
@@ -83,13 +163,21 @@ export async function currentUser() {
     return null;
   }
 
-  return session.user;
+  return buildUserContext(session.user, preferredWorkspaceId, preferredCompanyId);
 }
 
-export async function requireUser() {
+export async function requireUser(): Promise<any> {
   const user = await currentUser();
   if (!user) {
     redirect("/login");
+  }
+  return user;
+}
+
+export async function requireCompanyContext(): Promise<any> {
+  const user = await requireUser();
+  if (!user.workspace || !user.company) {
+    redirect("/onboarding");
   }
   return user;
 }

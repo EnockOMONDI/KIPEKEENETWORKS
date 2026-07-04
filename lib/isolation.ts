@@ -1,3 +1,6 @@
+import os from "os";
+import path from "path";
+
 export const isolationTiers = [
   {
     value: "SHARED",
@@ -6,8 +9,8 @@ export const isolationTiers = [
   },
   {
     value: "PROFILE",
-    label: "Separate Hermes profiles",
-    description: "Higher-risk clients. Dedicated Hermes profiles per company and employee role."
+    label: "Company Hermes profile",
+    description: "Higher-risk clients. Dedicated Hermes profile per company runtime."
   },
   {
     value: "CONTAINER",
@@ -33,9 +36,8 @@ export function companyNamespace(slug: string) {
   return slug.replace(/[^a-z0-9]/g, "").slice(0, 32) || "company";
 }
 
-export function hermesProfileName(namespace: string, employeeName: string) {
-  const role = employeeName.toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 28);
-  return `${namespace}${role}`.slice(0, 48);
+export function companyRuntimeProfileName(namespace: string) {
+  return namespace.replace(/[^a-z0-9_-]/g, "").slice(0, 48) || "company";
 }
 
 export function hermesHomePath(namespace: string) {
@@ -45,5 +47,3 @@ export function hermesHomePath(namespace: string) {
 export function isolationLabel(value: string) {
   return isolationTiers.find((tier) => tier.value === value)?.label ?? value;
 }
-import os from "os";
-import path from "path";

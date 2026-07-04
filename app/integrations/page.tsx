@@ -1,7 +1,7 @@
 import { AppShell, Badge, Card, EmptyState, PageHeader } from "@/components/AppShell";
 import { SubmitButton } from "@/components/Interactive";
-import { planIntegrationAction } from "@/lib/actions";
-import { requireUser } from "@/lib/auth";
+import { createMailboxAction, planIntegrationAction } from "@/lib/actions";
+import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { canManageCompany } from "@/lib/roles";
 import { CalendarDays, Cloud, Mail, MessageCircle, PlugZap, UsersRound } from "lucide-react";
@@ -47,18 +47,43 @@ const catalog = [
 ];
 
 export default async function IntegrationsPage() {
-  const user = await requireUser();
+  const user = await requireCompanyContext();
   if (!canManageCompany(user)) {
     redirect("/dashboard");
   }
-  const connections = await prisma.integrationConnection.findMany({
-    where: { companyId: user.companyId },
-    orderBy: { createdAt: "desc" }
-  });
+  const [connections, employees, mailboxes] = await Promise.all([
+    prisma.integrationConnection.findMany({
+      where: { companyId: user.companyId },
+      select: { id: true, displayName: true, provider: true, scopes: true, status: true },
+      orderBy: { createdAt: "desc" }
+    }),
+    prisma.companyEmployee.findMany({
+      where: { companyId: user.companyId },
+      select: { id: true, displayName: true },
+      orderBy: { displayName: "asc" }
+    }),
+    prisma.mailbox.findMany({
+      where: { companyId: user.companyId },
+      select: {
+        id: true,
+        emailAddress: true,
+        provider: true,
+        access: {
+          select: {
+            canDraft: true,
+            canRead: true,
+            canRequestSend: true,
+            employee: { select: { displayName: true } }
+          }
+        }
+      },
+      orderBy: { createdAt: "desc" }
+    })
+  ]);
   const connectionMap = new Map(connections.map((connection) => [connection.provider, connection]));
 
   return (
-    <AppShell companyName={user.company.name} companySlug={user.company.slug} userEmail={user.email} userRole={user.role}>
+    <AppShell companyName={user.company.name} companySlug={user.company.slug} userEmail={user.email} platformRole={user.role} userRole={user.memberRole ?? user.role}>
       <PageHeader
         eyebrow="Connected services"
         title="Integrations"
@@ -110,7 +135,7 @@ export default async function IntegrationsPage() {
               </div>
             </div>
             <div className="mt-4 space-y-3 text-sm leading-6 text-graphite">
-              <p>Each connection belongs to one company workspace.</p>
+              <p>Each connection belongs to one organisation workspace.</p>
               <p>Each employee should be granted only the services it needs.</p>
               <p>Sending messages, updating CRMs, or creating calendar events should require approval until the client explicitly relaxes that rule.</p>
             </div>
@@ -133,11 +158,59 @@ export default async function IntegrationsPage() {
           ) : (
             <EmptyState
               title="No integrations requested"
-              description="Request the services this company needs. Real OAuth/API setup will be connected one provider at a time."
+              description="Request the services this organisation needs. Real OAuth/API setup will be connected one provider at a time."
             />
           )}
+          <Card>
+            <h2 className="text-lg font-semibold">Mailboxes</h2>
+            <p className="mt-2 text-sm leading-6 text-graphite">
+              Add planned inboxes now. AI employees may read or draft only where access is granted; sending remains approval-only.
+            </p>
+            <form action={createMailboxAction} className="mt-4 space-y-3">
+              <input className="w-full rounded-md border border-black/10 px-3 py-2" name="address" placeholder="info@organisation.com" required type="email" />
+              <input className="w-full rounded-md border border-black/10 px-3 py-2" name="displayName" placeholder="Customer support inbox" />
+              <select className="w-full rounded-md border border-black/10 px-3 py-2" name="employeeId" required>
+                {employees.map((employee) => (
+                  <option key={employee.id} value={employee.id}>
+                    {employee.displayName}
+                  </option>
+                ))}
+              </select>
+              <select className="w-full rounded-md border border-black/10 px-3 py-2" name="accessLevel" defaultValue="DRAFT">
+                <option value="READ">Read only</option>
+                <option value="DRAFT">Read and draft</option>
+                <option value="SEND_WITH_APPROVAL">Draft, then send with approval</option>
+              </select>
+              <SubmitButton className="w-full" pendingText="Saving mailbox">
+                Add mailbox access
+              </SubmitButton>
+            </form>
+            {mailboxes.length ? (
+              <div className="mt-4 space-y-3">
+                {mailboxes.map((mailbox) => (
+                  <div className="rounded-md bg-paper p-3" key={mailbox.id}>
+                    <p className="font-semibold">{mailbox.emailAddress}</p>
+                    <p className="mt-1 text-xs text-graphite">{mailbox.provider}</p>
+                    <p className="mt-2 text-sm text-graphite">
+                      Access:{" "}
+                      {mailbox.access.length
+                        ? mailbox.access.map((item) => `${item.employee.displayName} (${mailboxAccessLabel(item)})`).join(", ")
+                        : "No employees assigned"}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </Card>
         </div>
       </div>
     </AppShell>
   );
+}
+
+function mailboxAccessLabel(access: { canRead: boolean; canDraft: boolean; canRequestSend: boolean }) {
+  if (access.canRequestSend) return "send with approval";
+  if (access.canDraft) return "draft";
+  if (access.canRead) return "read";
+  return "no access";
 }

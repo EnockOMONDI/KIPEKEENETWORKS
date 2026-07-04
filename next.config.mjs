@@ -1,6 +1,5 @@
-import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {
+/** @type {import("next").NextConfig} */
+const nextConfig = {
   output: "standalone",
   async headers() {
     return [
@@ -45,7 +44,7 @@ const nextConfig: NextConfig = {
       }
     ];
   },
-  outputFileTracingRoot: __dirname,
+  outputFileTracingRoot: process.cwd(),
   experimental: {}
 };
 

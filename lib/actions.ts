@@ -96,8 +96,8 @@ function safeInviteRole(role: string, user: { role: string; memberRole?: string 
 
 function defaultRoleInstructions(employeeName: string, companyName: string) {
   return [
-    `${employeeName} works inside the ${companyName} company runtime.`,
-    "Use only approved company/workspace knowledge and assigned workflows.",
+    `${employeeName} works for ${companyName}.`,
+    "Use only approved company/workspace knowledge and assigned company work instructions.",
     "Draft sensitive external actions for human approval."
   ].join("\n");
 }
@@ -620,7 +620,7 @@ export async function runWorkflowNowAction(formData: FormData) {
 
   assertHermesJobSigningConfigured();
 
-  const prompt = `Run the workflow: ${employeeWorkflow.workflow.name}. Prepare the result for human approval.`;
+  const prompt = `Follow this company work instruction: ${employeeWorkflow.workflow.name}. Prepare the result for human approval.`;
   const { session, jobData } = await buildJobInput(user, employeeWorkflow.employeeId, prompt, undefined, workflowId);
   await prisma.hermesJob.create({
     data: {
@@ -662,7 +662,7 @@ export async function createWorkflowAction(formData: FormData) {
     data: {
       companyId: user.companyId,
       name: String(formData.get("name")),
-      description: String(formData.get("description") || "Manual workflow"),
+      description: String(formData.get("description") || "Manual work instruction"),
       triggerType: String(formData.get("triggerType") || "MANUAL"),
       schedule: String(formData.get("schedule") || ""),
       approvalPolicy: formData.get("requiresApproval") === "on" ? "APPROVAL_REQUIRED" : "NO_APPROVAL",
@@ -679,7 +679,7 @@ export async function createWorkflowAction(formData: FormData) {
     data: {
       workflowId: workflow.id,
       stepOrder: 1,
-      instruction: String(formData.get("description") || "Complete the workflow using approved company context."),
+      instruction: String(formData.get("description") || "Complete the work instruction using approved company context."),
       requiresApproval: formData.get("requiresApproval") === "on"
     }
   });

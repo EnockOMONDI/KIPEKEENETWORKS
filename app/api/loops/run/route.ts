@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
       companyId: user.companyId,
       employeeId: employeeWorkflow.employeeId,
       workflowId: employeeWorkflow.workflowId,
-      title: `Workflow: ${employeeWorkflow.workflow.name}`
+      title: `Work instruction: ${employeeWorkflow.workflow.name}`
     }
   });
   const jobData = {
@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
     employeeId: employeeWorkflow.employeeId,
     sessionId: session.id,
     workflowId: employeeWorkflow.workflowId,
-    prompt: `Run the workflow: ${employeeWorkflow.workflow.name}. Prepare the result for human approval.`,
+    prompt: `Follow this company work instruction: ${employeeWorkflow.workflow.name}. Prepare the result for human approval.`,
     employeeName: employeeWorkflow.employee.displayName,
     companyName: user.company.name,
     runtimeProfile: runtime.hermesProfile,

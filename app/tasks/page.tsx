@@ -37,13 +37,13 @@ export default async function TasksPage() {
       <PageHeader
         eyebrow="Tasks"
         title="Work queue"
-        description="Track human approvals, recent AI work, and workflow activity in one operational view."
+        description="Track human approvals, recent AI work, and work instruction activity in one operational view."
       />
 
       <div className="grid gap-4 md:grid-cols-3">
         <Metric icon={<Inbox size={18} />} label="Pending approvals" tone={pending ? "warning" : "success"} value={pending} />
         <Metric icon={<Clock3 size={18} />} label="Recent AI jobs" value={jobs.length} />
-        <Metric icon={<Workflow size={18} />} label="Active workflows" value={workflows.filter((workflow) => workflow.status === "ACTIVE").length} />
+        <Metric icon={<Workflow size={18} />} label="Active instructions" value={workflows.filter((workflow) => workflow.status === "ACTIVE").length} />
       </div>
 
       <div className="mt-6 grid gap-5 lg:grid-cols-[380px_1fr]">
@@ -90,7 +90,7 @@ export default async function TasksPage() {
               </Card>
             ))
           ) : (
-            <EmptyState title="No tasks yet" description="Approvals, workflow tasks, and review items will appear here." />
+            <EmptyState title="No tasks yet" description="Approvals, work instruction tasks, and review items will appear here." />
           )}
         </div>
       </div>
@@ -113,7 +113,7 @@ export default async function TasksPage() {
         </Card>
 
         <Card>
-          <h2 className="text-lg font-semibold">Workflow activity</h2>
+          <h2 className="text-lg font-semibold">Work instruction activity</h2>
           <div className="mt-4 space-y-3">
             {workflows.length ? (
               workflows.map((workflow) => (
@@ -123,7 +123,7 @@ export default async function TasksPage() {
                 </div>
               ))
             ) : (
-              <p className="text-sm leading-6 text-graphite">No workflows have been created yet.</p>
+              <p className="text-sm leading-6 text-graphite">No work instructions have been created yet.</p>
             )}
           </div>
         </Card>

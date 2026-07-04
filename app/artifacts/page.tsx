@@ -84,7 +84,7 @@ export default async function ArtifactsPage() {
           ) : (
             <EmptyState
               title="No artifacts yet"
-              description="Upload organisation documents, SOPs, proposals, policies, or templates, then decide which AI employees can use them as memory."
+              description="Upload organisation documents, proposals, policies, templates, or work instructions, then decide which AI employees can use them as memory."
             />
           )}
         </div>

@@ -39,16 +39,16 @@ export default async function WorkflowsPage() {
   return (
     <AppShell companyName={user.company.name} companySlug={user.company.slug} userEmail={user.email} platformRole={user.role} userRole={user.memberRole || user.role}>
       <PageHeader
-        eyebrow="Workflow library"
-        title="Organisation workflows"
-        description="Workflows capture how this organisation does recurring or structured work. Employees run workflows through the organisation runtime with reusable skills."
+        eyebrow="Work instructions"
+        title="Company work instructions"
+        description="Work instructions capture how this organisation wants work done. AI employees combine these instructions with assigned skills, approved knowledge, and approval rules."
       />
       <div className="grid gap-5 lg:grid-cols-[380px_1fr]">
         <Card>
-          <h2 className="text-lg font-semibold">Create workflow</h2>
+          <h2 className="text-lg font-semibold">Create work instruction</h2>
           <form action={createWorkflowAction} className="mt-4 space-y-3">
             <input className="w-full rounded-md border border-black/10 px-3 py-2" name="name" placeholder="Weekly marketing plan" required />
-            <textarea className="min-h-24 w-full rounded-md border border-black/10 px-3 py-2" name="description" placeholder="What should this workflow produce?" required />
+            <textarea className="min-h-24 w-full rounded-md border border-black/10 px-3 py-2" name="description" placeholder="How should this work be prepared, reviewed, and approved?" required />
             <input className="w-full rounded-md border border-black/10 px-3 py-2" name="schedule" placeholder="Every Monday 09:00 Africa/Nairobi" />
             <select className="w-full rounded-md border border-black/10 px-3 py-2" name="employeeId" required>
               {employees.map((employee) => (
@@ -61,8 +61,8 @@ export default async function WorkflowsPage() {
               <input defaultChecked name="requiresApproval" type="checkbox" />
               Requires approval
             </label>
-            <SubmitButton className="w-full" pendingText="Creating workflow">
-              Create workflow
+            <SubmitButton className="w-full" pendingText="Creating instruction">
+              Create work instruction
             </SubmitButton>
           </form>
         </Card>
@@ -88,14 +88,14 @@ export default async function WorkflowsPage() {
                 </div>
                 <form action="/api/loops/run" className="mt-4" method="post">
                   <input name="workflowId" type="hidden" value={workflow.id} />
-                  <SubmitButton pendingText="Running workflow">Run now</SubmitButton>
+                  <SubmitButton pendingText="Running instruction">Run now</SubmitButton>
                 </form>
               </Card>
             ))
           ) : (
             <EmptyState
-              title="No workflows yet"
-              description="Create recurring work for an AI employee, such as weekly marketing plans, proposal drafts, finance reminders, lead research, or CEO briefs."
+              title="No work instructions yet"
+              description="Create instructions for an AI employee, such as how to prepare weekly marketing plans, proposal drafts, finance reminders, lead research, or CEO briefs."
             />
           )}
         </div>

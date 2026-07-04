@@ -54,7 +54,7 @@ export default async function EmployeesPage({
       <PageHeader
         eyebrow="Workforce"
         title="AI employees"
-        description="Employees are organisation-owned roles. They use assigned skills, workflows, knowledge, and mailbox permissions inside the organisation runtime."
+        description="Employees are organisation-owned roles. They use assigned skills, company work instructions, knowledge, and mailbox permissions."
       />
       <form className="mb-5 flex flex-col gap-3 rounded-lg border border-black/10 bg-white p-3 shadow-panel md:flex-row md:items-center md:justify-between">
         <label className="flex min-h-11 flex-1 items-center gap-3 rounded-md bg-paper px-3 text-sm text-graphite">
@@ -120,7 +120,7 @@ export default async function EmployeesPage({
                       <div className="flex flex-wrap gap-2 pt-1">
                         <span className="inline-flex items-center gap-1 rounded-md bg-paper px-2.5 py-1 text-xs font-semibold text-graphite">
                           <Database size={13} />
-                          Organisation runtime
+                          Organisation scoped
                         </span>
                         <span className="inline-flex items-center gap-1 rounded-md bg-paper px-2.5 py-1 text-xs font-semibold text-graphite">
                           <Activity size={13} />
@@ -131,7 +131,7 @@ export default async function EmployeesPage({
                         <div className="rounded-md border border-black/10 bg-paper p-3">
                           <p className="text-sm font-semibold">Role instructions</p>
                           <p className="mt-1 text-xs leading-5 text-graphite">
-                            These instructions travel with the employee role. They do not create a separate Hermes profile.
+                            These instructions travel with the employee role. They define how this employee should behave inside the organisation.
                           </p>
                           <form action={saveEmployeeRoleAction} className="mt-3 space-y-2">
                             <input name="employeeId" type="hidden" value={employee.id} />

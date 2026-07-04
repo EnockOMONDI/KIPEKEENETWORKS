@@ -287,7 +287,7 @@ function WorkflowHeader({
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-graphite">Current workflow</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-graphite">Current work instruction</p>
             <h2 className="mt-1 text-lg font-semibold">{selectedWorkflow?.name ?? title}</h2>
           </div>
           <div>
@@ -302,7 +302,7 @@ function WorkflowHeader({
         </div>
         <Link className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-violetline bg-white px-5 text-sm font-semibold text-forest" href="/workflows">
           <Workflow size={17} />
-          View Workflow
+          View instructions
         </Link>
       </div>
     </header>
@@ -355,7 +355,7 @@ function AssistantWorkspace({
           ["Upload knowledge", "/artifacts"],
           ["Send to approvals", "/approvals"],
           ["Create task", "/tasks"],
-          ["View workflow", "/workflows"]
+          ["View instructions", "/workflows"]
         ].map(([action, href]) => (
           <Link className="inline-flex min-h-10 items-center rounded-full border border-violetline px-4 text-xs font-semibold text-ink hover:bg-[#f5f0ff]" href={href} key={action}>
             {action}
@@ -480,14 +480,14 @@ function ContextContent({
       ) : null}
 
       <section>
-        <p className="mb-3 text-xs font-semibold uppercase tracking-[0.12em] text-graphite">Workflow context</p>
+        <p className="mb-3 text-xs font-semibold uppercase tracking-[0.12em] text-graphite">Work instruction context</p>
         <div className="rounded-3xl border border-violetline p-4">
           <p className="font-semibold">{workflow?.name ?? "Direct chat"}</p>
-          <p className="mt-1 text-sm text-graphite">{workflow?.description ?? "No workflow selected."}</p>
+          <p className="mt-1 text-sm text-graphite">{workflow?.description ?? "No work instruction selected."}</p>
           <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-[#ede9fe]">
             <div className="h-full w-1/2 rounded-full bg-copper" />
           </div>
-          <p className="mt-2 text-xs text-graphite">{workflow ? `${workflow.steps} workflow steps` : "Conversation mode"} · {activeJobs ? "Working" : "Ready"}</p>
+          <p className="mt-2 text-xs text-graphite">{workflow ? `${workflow.steps} instruction steps` : "Conversation mode"} · {activeJobs ? "Working" : "Ready"}</p>
         </div>
       </section>
 

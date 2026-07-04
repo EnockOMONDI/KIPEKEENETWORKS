@@ -99,7 +99,7 @@ export default async function DocumentsPage() {
               </Card>
             ))
           ) : (
-            <EmptyState title="No documents yet" description="Upload SOPs, proposals, price lists, brand files, policies, and templates for this organisation." />
+            <EmptyState title="No documents yet" description="Upload proposals, price lists, brand files, policies, templates, and work instructions for this organisation." />
           )}
         </div>
       </div>

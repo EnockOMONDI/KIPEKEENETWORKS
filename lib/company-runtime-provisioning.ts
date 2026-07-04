@@ -61,10 +61,10 @@ Business rules:
 ${company.businessRules.length ? company.businessRules.map((rule) => `- ${rule.name}: ${rule.ruleText}`).join("\n") : "- Approval-first behavior for external actions."}
 
 Runtime rules:
-- Employee roles, workflows, skills, and knowledge permissions are supplied by Kipekee Networks for each task.
+- Employee roles, company work instructions, skills, and knowledge permissions are supplied for each task.
 - Work only for the assigned company and approved workspace/company context.
 - Never reveal internal infrastructure, repositories, branches, git state, deployment details, databases, local files, profile names, tenant metadata, worker state, or internal IDs.
-- Ask for the missing document, SOP, policy, example, or permission when company context is insufficient.
+- Ask for the missing document, work instruction, policy, example, or permission when company context is insufficient.
 - Prepare sensitive business actions for approval before execution.
 `.trim();
 }

@@ -18,7 +18,7 @@ const links = [
   { href: "/dashboard", label: "Home", icon: "Home", audience: "all" },
   { href: "/organisations", label: "Organisations", icon: "Building2", audience: "all" },
   { href: "/employees", label: "AI Employees", icon: "Bot", audience: "all" },
-  { href: "/workflows", label: "Workflows", icon: "CalendarClock", audience: "manager" },
+  { href: "/workflows", label: "Work Instructions", icon: "CalendarClock", audience: "manager" },
   { href: "/chat", label: "Conversations", icon: "MessageSquare", audience: "all" },
   { href: "/knowledge", label: "Knowledge", icon: "Brain", audience: "all" },
   { href: "/documents", label: "Documents", icon: "FileText", audience: "all" },
@@ -101,7 +101,7 @@ export function AppShell({
               </span>
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold">Upgrade and save 40%</p>
-                <p className="truncate text-[11px] text-graphite">More workflows and storage</p>
+                <p className="truncate text-[11px] text-graphite">More instructions and storage</p>
               </div>
             </div>
             <Link className="mt-3 flex min-h-9 w-full items-center justify-center rounded-xl bg-gradient-to-r from-forest to-copper px-3 text-xs font-semibold text-white" href="/billing">

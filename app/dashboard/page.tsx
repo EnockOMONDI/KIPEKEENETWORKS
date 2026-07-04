@@ -51,7 +51,7 @@ export default async function DashboardPage() {
         <Metric label="Organisations" value={companies.length} />
         <Metric label="AI employees" value={employees} />
         <Metric label="Knowledge files" value={artifacts} />
-        <Metric label="Workflows" value={workflows} />
+        <Metric label="Work instructions" value={workflows} />
         <Metric label="Approvals" value={approvals} />
       </div>
       <div className="mt-6 grid gap-5 lg:grid-cols-[1fr_360px]">
@@ -88,7 +88,7 @@ export default async function DashboardPage() {
             <p>Organisation: {user.company.name}</p>
             <p>Role: {roleLabel(user.memberRole || user.role)}</p>
             <p>Isolation: {isolationLabel(user.company.isolationTier)}</p>
-            <p>Organisation runtime: <span className="font-semibold text-ink">{runtime?.status ?? "Missing"}</span></p>
+            <p>AI setup: <span className="font-semibold text-ink">{runtime?.status === "ACTIVE" || runtime?.status === "READY" ? "Ready" : "Pending"}</span></p>
             {platformAdmin ? <p>Runtime profile: {runtime?.hermesProfile ?? user.company.hermesNamespace ?? user.company.slug}</p> : null}
             <p>Conversations: {conversations}</p>
           </div>

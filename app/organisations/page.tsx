@@ -36,14 +36,14 @@ export default async function OrganisationsPage() {
       <PageHeader
         eyebrow="Workspace"
         title="Organisations"
-        description="A workspace can hold one organisation or many businesses, brands, foundations, branches, departments, or programmes. Each organisation gets its own runtime by default."
+        description="A workspace can hold one organisation or many businesses, brands, foundations, branches, departments, or programmes. Each organisation keeps its work, knowledge, employees, and instructions separate by default."
       />
 
       <div className="grid gap-4 md:grid-cols-4">
         <Metric icon={<Building2 size={18} />} label="Organisations" value={organisations.length} />
         <Metric icon={<Users size={18} />} label="Employees" value={organisations.reduce((sum, item) => sum + item._count.employees, 0)} />
         <Metric icon={<Database size={18} />} label="Knowledge files" value={organisations.reduce((sum, item) => sum + item._count.artifacts, 0)} />
-        <Metric icon={<ShieldCheck size={18} />} label="Default isolation" value="Runtime" />
+        <Metric icon={<ShieldCheck size={18} />} label="Default isolation" value="Separate" />
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
@@ -59,14 +59,14 @@ export default async function OrganisationsPage() {
                 <div className="flex flex-wrap gap-2">
                   <Badge tone={organisation.status === "ACTIVE" ? "success" : "warning"}>{organisation.status}</Badge>
                   <Badge tone={organisation.runtime?.status === "ACTIVE" || organisation.runtime?.status === "READY" ? "success" : "warning"}>
-                    {organisation.runtime?.status ?? "Runtime missing"}
+                    {organisation.runtime?.status === "ACTIVE" || organisation.runtime?.status === "READY" ? "AI setup ready" : "AI setup pending"}
                   </Badge>
                 </div>
               </div>
 
               <div className="mt-5 grid gap-3 sm:grid-cols-4">
                 <MiniStat label="Employees" value={organisation._count.employees} />
-                <MiniStat label="Workflows" value={organisation._count.workflows} />
+                <MiniStat label="Instructions" value={organisation._count.workflows} />
                 <MiniStat label="Documents" value={organisation._count.artifacts} />
                 <MiniStat label="Chats" value={organisation._count.sessions} />
               </div>
@@ -81,13 +81,13 @@ export default async function OrganisationsPage() {
               </div>
               {manager ? (
                 <p className="mt-4 text-xs text-graphite">
-                  Runtime profile is managed by Kipekee and hidden from client-facing workspaces.
+                  Technical execution details are managed by the platform and hidden from client-facing workspaces.
                 </p>
               ) : null}
             </Card>
           ))
         ) : (
-          <EmptyState title="No organisations yet" description="Create the first organisation during onboarding, then add employees, documents, workflows, and integrations." />
+          <EmptyState title="No organisations yet" description="Create the first organisation during onboarding, then add employees, documents, work instructions, and integrations." />
         )}
       </div>
     </AppShell>

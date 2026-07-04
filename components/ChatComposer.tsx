@@ -84,7 +84,7 @@ export function ChatComposer({
           ))}
         </select>
         <span className="rounded-full bg-forest/10 px-3 py-2 text-xs font-semibold text-forest">
-          Organisation runtime
+          Organisation scoped
         </span>
         {workflows.length ? (
           <select
@@ -93,9 +93,9 @@ export function ChatComposer({
             defaultValue=""
           >
             <option value="">Direct chat</option>
-            {workflows.map((workflow) => (
-              <option key={workflow.id} value={workflow.id}>
-                {workflow.name}
+            {workflows.map((instruction) => (
+              <option key={instruction.id} value={instruction.id}>
+                {instruction.name}
               </option>
             ))}
           </select>
@@ -114,7 +114,7 @@ export function ChatComposer({
         <ChatSubmit />
       </div>
       <div className="mt-3 flex gap-2 overflow-x-auto pb-1 text-xs font-semibold text-graphite">
-        {["/proposal", "/email", "/upload", "/summarize", "/task", "/workflow"].map((command) => (
+        {["/proposal", "/email", "/upload", "/summarize", "/task", "/instruction"].map((command) => (
           <span className="shrink-0 rounded-xl bg-[#f5f0ff] px-3 py-2" key={command}>
             {command}
           </span>

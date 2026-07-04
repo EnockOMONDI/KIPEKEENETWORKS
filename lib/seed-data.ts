@@ -10,7 +10,7 @@ export const onboardingPackages = [
   {
     name: "Business Starter",
     priceKes: 15000,
-    description: "8 AI employees, support, workflows, document memory",
+    description: "8 AI employees, support, company work instructions, document memory",
     includedEmployees: 8,
     loops: true,
     documentMemory: true
@@ -18,13 +18,13 @@ export const onboardingPackages = [
   {
     name: "Max Onboarding",
     priceKes: 50000,
-    description: "Advanced setup, priority support, deeper workflow setup",
+    description: "Advanced setup, priority support, deeper work instruction setup",
     includedEmployees: 12,
     loops: true,
     documentMemory: true
   },
   {
-    name: "Custom Workflow / Integration",
+    name: "Custom Work Instruction / Integration",
     priceKes: null,
     description: "CRM, WhatsApp, email, calendar, accounting, and custom automation",
     includedEmployees: null,
@@ -52,7 +52,7 @@ export const skillCatalog = [
     key: "knowledge-structuring",
     name: "Knowledge Structuring",
     category: "knowledge",
-    description: "Organizes uploaded files into summaries, SOPs, FAQs, catalogues, policies, and reusable memory sections.",
+    description: "Organizes uploaded files into summaries, FAQs, catalogues, policies, work instructions, and reusable memory sections.",
     defaultToolsets: ["chat", "memory", "documents", "audit"]
   },
   {
@@ -129,7 +129,7 @@ export const skillCatalog = [
     key: "operations-planning",
     name: "Operations Planning",
     category: "operations",
-    description: "Creates SOPs, checklists, shift plans, delivery trackers, task breakdowns, and process improvement notes.",
+    description: "Creates work instructions, checklists, shift plans, delivery trackers, task breakdowns, and process improvement notes.",
     defaultToolsets: ["chat", "memory", "documents", "audit"]
   },
   {
@@ -450,7 +450,7 @@ export const workflowTemplateCatalog = [
     steps: [
       {
         skillKey: "business-briefing",
-        instruction: "Summarize the month from approved memory, chats, uploaded notes, workflows, and tasks.",
+        instruction: "Summarize the month from approved memory, chats, uploaded notes, company work instructions, and tasks.",
         requiresApproval: false
       },
       {
@@ -462,9 +462,9 @@ export const workflowTemplateCatalog = [
   },
   {
     key: "sop-checklist",
-    name: "SOP and checklist builder",
+    name: "Work instruction and checklist builder",
     category: "operations",
-    description: "Turn process notes into SOPs, checklists, responsibilities, approvals, and repeatable workflow steps.",
+    description: "Turn process notes into company work instructions, checklists, responsibilities, approvals, and repeatable steps.",
     triggerType: "MANUAL",
     schedule: null,
     approvalPolicy: "APPROVAL_REQUIRED",
@@ -472,7 +472,7 @@ export const workflowTemplateCatalog = [
     steps: [
       {
         skillKey: "operations-planning",
-        instruction: "Draft an SOP with objective, trigger, owner, steps, checklist, risks, approvals, and handoff notes.",
+        instruction: "Draft a company work instruction with objective, trigger, owner, steps, checklist, risks, approvals, and handoff notes.",
         requiresApproval: true
       }
     ]

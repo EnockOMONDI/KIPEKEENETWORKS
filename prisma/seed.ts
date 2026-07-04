@@ -68,11 +68,11 @@ async function seedCatalog() {
       where: { name: template.name },
       update: {
         defaultSkills: JSON.stringify(template.skills),
-        description: `${template.name} trained on company workflows, approved knowledge, and assigned reusable skills.`
+        description: `${template.name} trained on company work instructions, approved knowledge, and assigned reusable skills.`
       },
       create: {
         name: template.name,
-        description: `${template.name} trained on company workflows, approved knowledge, and assigned reusable skills.`,
+        description: `${template.name} trained on company work instructions, approved knowledge, and assigned reusable skills.`,
         defaultTools: "chat,documents,memory,audit",
         defaultSkills: JSON.stringify(template.skills)
       }

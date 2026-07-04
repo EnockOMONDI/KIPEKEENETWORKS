@@ -30,7 +30,7 @@ export default async function OnboardingPage() {
       <PageHeader
         eyebrow="Growth"
         title="Client onboarding"
-        description="Create organisation workspaces, choose a package, then install employees, skills, workflow templates, knowledge collections, and a runtime."
+        description="Create organisation workspaces, choose a package, then install employees, skills, company work instruction templates, knowledge collections, and a runtime."
       />
       <div className="grid gap-5 lg:grid-cols-[380px_1fr]">
         <Card>
@@ -112,7 +112,7 @@ export default async function OnboardingPage() {
           ) : (
             <EmptyState
               title="No client workspaces yet"
-              description="Create the first external organisation after Kipekee Studio has validated the workflow internally."
+              description="Create the first external organisation after Kipekee Studio has validated the work instructions internally."
             />
           )}
         </div>

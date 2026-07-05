@@ -17,17 +17,7 @@ import { employeeTemplates, safeOrganisationType, starterWorkflowTemplates } fro
 import { hashPassword, hashToken } from "./security";
 import { logError, logInfo } from "./server-log";
 import { storeArtifactObject } from "./storage";
-
-const maxUploadBytes = 10 * 1024 * 1024;
-const allowedUploadTypes = new Set([
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  "text/csv",
-  "text/markdown",
-  "text/plain"
-]);
+import { validateArtifactUpload } from "./upload-policy";
 const allowedIntegrationProviders = new Set([
   "whatsapp",
   "gmail",
@@ -71,6 +61,15 @@ function inviteExpiresAt() {
 
 function inviteMaxOpenCount() {
   return Number(process.env.KIPEKEE_INVITE_MAX_OPENS || 5);
+}
+
+function uploadReturnTo(formData: FormData) {
+  const value = String(formData.get("returnTo") ?? "/artifacts");
+  return value === "/documents" ? "/documents" : "/artifacts";
+}
+
+function uploadRedirect(returnTo: string, code: string): never {
+  redirect(`${returnTo}?error=${encodeURIComponent(code)}`);
 }
 
 async function enforceRateLimitOrRedirect(action: RateLimitAction, subjects: string[], redirectTo: string) {
@@ -267,20 +266,23 @@ export async function saveEmployeeRoleAction(formData: FormData) {
 export async function uploadArtifactAction(formData: FormData) {
   await assertSameOrigin();
   const user = await requireCompanyContext();
-  await enforceRateLimitOrRedirect("artifact_upload", [`company:${user.companyId}`, `user:${user.id}`], "/artifacts");
+  const returnTo = uploadReturnTo(formData);
+  await enforceRateLimitOrRedirect("artifact_upload", [`company:${user.companyId}`, `user:${user.id}`], returnTo);
   const file = formData.get("file");
   const addToMemory = formData.get("addToMemory") === "on";
   const ownerType = String(formData.get("ownerType") ?? "COMPANY") === "WORKSPACE" ? "WORKSPACE" : "COMPANY";
   const employees = formData.getAll("employeeIds").map(String);
 
   if (!(file instanceof File) || file.size === 0) {
-    redirect("/artifacts?error=file");
+    uploadRedirect(returnTo, "file");
   }
-  if (file.size > maxUploadBytes) {
-    redirect("/artifacts?error=file-size");
-  }
-  if (file.type && !allowedUploadTypes.has(file.type) && !file.name.endsWith(".md")) {
-    redirect("/artifacts?error=file-type");
+  const uploadPolicy = validateArtifactUpload({
+    fileName: file.name,
+    size: file.size,
+    type: file.type
+  });
+  if (uploadPolicy !== "ok") {
+    uploadRedirect(returnTo, uploadPolicy === "storage-upgrade" ? "storage-upgrade" : uploadPolicy);
   }
 
   const allowedEmployees = employees.length
@@ -322,7 +324,7 @@ export async function uploadArtifactAction(formData: FormData) {
   });
 
   if (!stored) {
-    redirect("/artifacts?error=storage");
+    uploadRedirect(returnTo, "storage");
   }
 
   const extractedText =
@@ -396,6 +398,8 @@ export async function uploadArtifactAction(formData: FormData) {
   });
 
   revalidatePath("/artifacts");
+  revalidatePath("/documents");
+  redirect(`${returnTo}?uploaded=1`);
 }
 
 async function buildJobInput(user: any, employeeId: string, prompt: string, sessionId?: string, workflowId?: string) {

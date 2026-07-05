@@ -1,16 +1,23 @@
-import { AppShell, Badge, Card, EmptyState, PageHeader } from "@/components/AppShell";
+import { AppShell, Badge, Card, EmptyState, Notice, PageHeader } from "@/components/AppShell";
 import { SubmitButton } from "@/components/Interactive";
 import { createTeamInviteAction, revokeTeamInviteAction } from "@/lib/actions";
 import { inviteUrl as buildInviteUrl } from "@/lib/app-url";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getInviteFlash } from "@/lib/invite-flash";
+import { pageNotice } from "@/lib/page-notices";
 import { requestOrigin } from "@/lib/request-security";
 import { canManageTeam, roleLabel, roles } from "@/lib/roles";
 import { redirect } from "next/navigation";
 
-export default async function TeamPage() {
+export default async function TeamPage({
+  searchParams
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
   const user = await requireCompanyContext();
+  const params = await searchParams;
+  const notice = pageNotice("team", params.error);
   const origin = await requestOrigin();
   const inviteToken = await getInviteFlash("team");
   if (!canManageTeam(user)) {
@@ -49,6 +56,7 @@ export default async function TeamPage() {
         title="Team"
         description="Invite people into this organisation workspace and decide who can manage employees, knowledge, integrations, approvals, and billing."
       />
+      {notice ? <Notice description={notice.description} title={notice.title} tone={notice.tone} /> : null}
       <div className="grid gap-5 lg:grid-cols-[380px_1fr]">
         <Card>
           <h2 className="text-lg font-semibold">Invite team member</h2>

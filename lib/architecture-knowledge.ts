@@ -217,10 +217,13 @@ export const dataArchitecture: KnowledgeItem[] = [
   {
     title: "Knowledge and files",
     status: "Partial",
-    completion: 70,
+    completion: 73,
     summary: "KnowledgeCollection, Artifact, KnowledgeChunk, and ArtifactAccess support scoped uploads and simple text memory.",
-    evidence: ["prisma/schema.prisma", "lib/actions.ts", "lib/storage.ts", "lib/memory-context.ts"],
-    risks: ["No vector DB/search runtime yet; binary document text extraction is limited."],
+    evidence: ["prisma/schema.prisma", "lib/actions.ts", "lib/storage.ts", "lib/upload-policy.ts", "lib/memory-context.ts"],
+    risks: [
+      "No vector DB/search runtime yet; binary document text extraction is limited.",
+      "Uploads are intentionally capped: standard documents up to 30 MB, storage-boost/media path up to 50 MB."
+    ],
     next: ["Add proper extraction/indexing pipeline and vector search after MVP validation."]
   },
   {
@@ -256,10 +259,13 @@ export const integrationStatus: KnowledgeItem[] = [
   {
     title: "Supabase database and storage",
     status: "Partial",
-    completion: 75,
-    summary: "Postgres is used through Prisma. Supabase Storage uploads are supported when env vars are configured.",
-    evidence: ["prisma/schema.prisma", "lib/db.ts", "lib/storage.ts", "app/api/health/route.ts"],
-    risks: ["Storage bucket policies must be configured outside this repo."],
+    completion: 78,
+    summary: "Postgres is used through Prisma. Supabase Storage uploads are supported when env vars are configured, with app-level upload policy and friendly error handling.",
+    evidence: ["prisma/schema.prisma", "lib/db.ts", "lib/storage.ts", "lib/upload-policy.ts", "app/api/health/route.ts"],
+    risks: [
+      "Storage bucket policies must be configured outside this repo.",
+      "Uploads above the configured Server Actions transport cap are rejected before application logic can process them."
+    ],
     next: ["Verify bucket privacy and service-role env vars in Render."]
   },
   {

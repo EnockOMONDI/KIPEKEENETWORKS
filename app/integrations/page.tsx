@@ -1,8 +1,9 @@
-import { AppShell, Badge, Card, EmptyState, PageHeader } from "@/components/AppShell";
+import { AppShell, Badge, Card, EmptyState, Notice, PageHeader } from "@/components/AppShell";
 import { SubmitButton } from "@/components/Interactive";
 import { createMailboxAction, planIntegrationAction } from "@/lib/actions";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { pageNotice } from "@/lib/page-notices";
 import { canManageCompany } from "@/lib/roles";
 import { CalendarDays, Cloud, Mail, MessageCircle, PlugZap, UsersRound } from "lucide-react";
 import { redirect } from "next/navigation";
@@ -46,8 +47,14 @@ const catalog = [
   }
 ];
 
-export default async function IntegrationsPage() {
+export default async function IntegrationsPage({
+  searchParams
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
   const user = await requireCompanyContext();
+  const params = await searchParams;
+  const notice = pageNotice("integrations", params.error);
   if (!canManageCompany(user)) {
     redirect("/dashboard");
   }
@@ -89,6 +96,7 @@ export default async function IntegrationsPage() {
         title="Integrations"
         description="Connect client tools through Kipekee-controlled permissions. AI employees can use approved services, but external actions still pass through approval rules."
       />
+      {notice ? <Notice description={notice.description} title={notice.title} tone={notice.tone} /> : null}
       <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
         <div className="grid gap-3 md:grid-cols-2">
           {catalog.map((item) => {

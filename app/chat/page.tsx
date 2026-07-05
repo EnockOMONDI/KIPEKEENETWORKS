@@ -2,13 +2,15 @@ import Link from "next/link";
 import {
   AppShell,
   Badge,
-  EmptyState
+  EmptyState,
+  Notice
 } from "@/components/AppShell";
 import { ChatAutoRefresh } from "@/components/ChatAutoRefresh";
 import { ChatComposer } from "@/components/ChatComposer";
 import { chatAction } from "@/lib/actions";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { pageNotice } from "@/lib/page-notices";
 import {
   Bot,
   CheckCircle2,
@@ -25,10 +27,11 @@ import {
 export default async function ChatPage({
   searchParams
 }: {
-  searchParams: Promise<{ session?: string }>;
+  searchParams: Promise<{ error?: string; session?: string }>;
 }) {
   const user = await requireCompanyContext();
   const params = await searchParams;
+  const notice = pageNotice("chat", params.error);
   const [employees, workflows, sessions, artifacts] = await Promise.all([
     prisma.companyEmployee.findMany({
       where: { companyId: user.companyId },
@@ -108,6 +111,11 @@ export default async function ChatPage({
       userEmail={user.email}
       userRole={user.memberRole || user.role}
     >
+      {notice ? (
+        <div className="px-3 pt-4 sm:px-5 xl:px-6">
+          <Notice description={notice.description} title={notice.title} tone={notice.tone} />
+        </div>
+      ) : null}
       <ChatAutoRefresh active={activeJobs.length > 0} />
       <div className="grid min-h-[calc(100vh-74px)] gap-0 overflow-hidden rounded-[28px] border border-violetline bg-white shadow-panel xl:grid-cols-[320px_minmax(0,1fr)_340px] xl:rounded-none xl:border-x xl:border-y-0">
         <EmployeeRail

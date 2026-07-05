@@ -1,12 +1,19 @@
-import { AppShell, Badge, Card, EmptyState, PageHeader } from "@/components/AppShell";
-import { SubmitButton } from "@/components/Interactive";
+import { AppShell, Badge, Card, EmptyState, Notice, PageHeader } from "@/components/AppShell";
+import { ArtifactUploadForm } from "@/components/ArtifactUploadForm";
 import { uploadArtifactAction } from "@/lib/actions";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { uploadPolicyMessage } from "@/lib/upload-policy";
 import { FileText, UploadCloud } from "lucide-react";
 
-export default async function DocumentsPage() {
+export default async function DocumentsPage({
+  searchParams
+}: {
+  searchParams: Promise<{ error?: string; uploaded?: string }>;
+}) {
   const user = await requireCompanyContext();
+  const params = await searchParams;
+  const notice = uploadPolicyMessage(params.uploaded ? "uploaded" : params.error);
   const [employees, documents] = await Promise.all([
     prisma.companyEmployee.findMany({
       where: { companyId: user.companyId },
@@ -36,6 +43,7 @@ export default async function DocumentsPage() {
         title="Files and memory access"
         description="Upload business files, decide whether they become memory, and choose which AI employees can use them."
       />
+      {notice ? <Notice description={notice.description} title={notice.title} tone={notice.tone} /> : null}
       <div className="grid gap-5 lg:grid-cols-[380px_1fr]">
         <Card>
           <div className="flex items-center gap-3">
@@ -47,27 +55,7 @@ export default async function DocumentsPage() {
               <p className="text-sm text-graphite">Private to this organisation by default.</p>
             </div>
           </div>
-          <form action={uploadArtifactAction} className="mt-5 space-y-4">
-            <input className="min-h-11 w-full rounded-2xl border border-violetline px-3 py-2 text-sm" name="file" required type="file" />
-            <label className="flex min-h-11 items-center gap-2 rounded-2xl bg-paper px-3 text-sm font-medium">
-              <input name="addToMemory" type="checkbox" />
-              Add this document to memory
-            </label>
-            <div>
-              <p className="mb-2 text-sm font-semibold">Employee access</p>
-              <div className="max-h-72 space-y-2 overflow-auto rounded-2xl border border-violetline bg-paper p-3">
-                {employees.map((employee) => (
-                  <label className="flex min-h-10 items-center gap-2 text-sm" key={employee.id}>
-                    <input name="employeeIds" type="checkbox" value={employee.id} />
-                    {employee.displayName}
-                  </label>
-                ))}
-              </div>
-            </div>
-            <SubmitButton className="w-full" pendingText="Uploading">
-              Upload document
-            </SubmitButton>
-          </form>
+          <ArtifactUploadForm action={uploadArtifactAction} employees={employees} kind="document" returnTo="/documents" />
         </Card>
 
         <div className="space-y-3">

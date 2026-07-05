@@ -1,13 +1,20 @@
-import { AppShell, Badge, Card, EmptyState, PageHeader } from "@/components/AppShell";
+import { AppShell, Badge, Card, EmptyState, Notice, PageHeader } from "@/components/AppShell";
 import { SubmitButton } from "@/components/Interactive";
 import { createInvoiceAction } from "@/lib/actions";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { pageNotice } from "@/lib/page-notices";
 import { canManageBilling, isKipekeeAdmin } from "@/lib/roles";
 import { redirect } from "next/navigation";
 
-export default async function BillingPage() {
+export default async function BillingPage({
+  searchParams
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
   const user = await requireCompanyContext();
+  const params = await searchParams;
+  const notice = pageNotice("billing", params.error);
   if (!canManageBilling(user)) {
     redirect("/dashboard");
   }
@@ -45,6 +52,7 @@ export default async function BillingPage() {
         title="Billing and invoice records"
         description="Kipekee Networks keeps setup fees and monthly user subscriptions as separate revenue layers."
       />
+      {notice ? <Notice description={notice.description} title={notice.title} tone={notice.tone} /> : null}
       <div className="grid gap-5 lg:grid-cols-[380px_1fr]">
         <div className="space-y-5">
           <Card>

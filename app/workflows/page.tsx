@@ -1,13 +1,20 @@
-import { AppShell, Badge, Card, EmptyState, PageHeader } from "@/components/AppShell";
+import { AppShell, Badge, Card, EmptyState, Notice, PageHeader } from "@/components/AppShell";
 import { SubmitButton } from "@/components/Interactive";
 import { createWorkflowAction } from "@/lib/actions";
 import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { pageNotice } from "@/lib/page-notices";
 import { canManageCompany } from "@/lib/roles";
 import { redirect } from "next/navigation";
 
-export default async function WorkflowsPage() {
+export default async function WorkflowsPage({
+  searchParams
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
   const user = await requireCompanyContext();
+  const params = await searchParams;
+  const notice = pageNotice("workflows", params.error);
   if (!canManageCompany(user)) {
     redirect("/dashboard");
   }
@@ -43,6 +50,7 @@ export default async function WorkflowsPage() {
         title="Company work instructions"
         description="Work instructions capture how this organisation wants work done. AI employees combine these instructions with assigned skills, approved knowledge, and approval rules."
       />
+      {notice ? <Notice description={notice.description} title={notice.title} tone={notice.tone} /> : null}
       <div className="grid gap-5 lg:grid-cols-[380px_1fr]">
         <Card>
           <h2 className="text-lg font-semibold">Create work instruction</h2>

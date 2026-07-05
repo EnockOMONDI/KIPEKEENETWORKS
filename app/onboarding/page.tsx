@@ -1,4 +1,4 @@
-import { AppShell, Badge, Card, EmptyState, PageHeader } from "@/components/AppShell";
+import { AppShell, Badge, Card, EmptyState, Notice, PageHeader } from "@/components/AppShell";
 import { SubmitButton } from "@/components/Interactive";
 import { createCompanyAction } from "@/lib/actions";
 import { inviteUrl as buildInviteUrl } from "@/lib/app-url";
@@ -6,13 +6,20 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getInviteFlash } from "@/lib/invite-flash";
 import { isolationLabel, isolationTiers } from "@/lib/isolation";
+import { pageNotice } from "@/lib/page-notices";
 import { requestOrigin } from "@/lib/request-security";
 import { isKipekeeAdmin } from "@/lib/roles";
 import { organisationTypes } from "@/lib/seed-data";
 import { redirect } from "next/navigation";
 
-export default async function OnboardingPage() {
+export default async function OnboardingPage({
+  searchParams
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
   const user = await requireUser();
+  const params = await searchParams;
+  const notice = pageNotice("onboarding", params.error);
   const origin = await requestOrigin();
   const inviteToken = await getInviteFlash("onboarding");
   if (!isKipekeeAdmin(user)) {
@@ -32,6 +39,7 @@ export default async function OnboardingPage() {
         title="Client onboarding"
         description="Create organisation workspaces, choose a package, then install employees, skills, company work instruction templates, knowledge collections, and a runtime."
       />
+      {notice ? <Notice description={notice.description} title={notice.title} tone={notice.tone} /> : null}
       <div className="grid gap-5 lg:grid-cols-[380px_1fr]">
         <Card>
           <h2 className="text-lg font-semibold">New organisation</h2>

@@ -49,7 +49,11 @@ const nextConfig = {
     ];
   },
   outputFileTracingRoot: projectRoot,
-  experimental: {}
+  experimental: {
+    serverActions: {
+      bodySizeLimit: "55mb"
+    }
+  }
 };
 
 export default nextConfig;

@@ -209,6 +209,29 @@ export function Card({ children }: { children: React.ReactNode }) {
   return <section className="rounded-3xl border border-violetline bg-white p-5 shadow-panel">{children}</section>;
 }
 
+export function Notice({
+  description,
+  title,
+  tone = "neutral"
+}: {
+  description: string;
+  title: string;
+  tone?: "neutral" | "success" | "warning";
+}) {
+  const styles = {
+    neutral: "border-violetline bg-white text-ink",
+    success: "border-forest/20 bg-forest/5 text-forest",
+    warning: "border-copper/25 bg-[#fff7ed] text-copper"
+  };
+
+  return (
+    <div className={`mb-5 rounded-3xl border px-4 py-3 text-sm leading-6 ${styles[tone]}`}>
+      <p className="font-semibold">{title}</p>
+      <p className="mt-1 text-graphite">{description}</p>
+    </div>
+  );
+}
+
 export function EmptyState({
   action,
   description,

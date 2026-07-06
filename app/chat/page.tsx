@@ -93,8 +93,8 @@ export default async function ChatPage({
     selectedEmployee
       ? prisma.companyEmployee.findFirst({
           where: { id: selectedEmployee.id, companyId: user.companyId },
-          select: {
-            skills: { where: { enabled: true }, select: { skill: { select: { name: true } } } },
+            select: {
+            skills: { where: { enabled: true }, select: { skill: { select: { key: true, name: true, defaultToolsets: true } } } },
             artifactAccess: { where: { canUseAsMemory: true }, select: { artifactId: true } }
           }
         })
@@ -172,10 +172,11 @@ export default async function ChatPage({
             <form action={chatAction} className="sticky bottom-0 z-20 border-t border-violetline bg-white/95 px-4 py-4 backdrop-blur sm:px-8">
               <ChatComposer
                 employees={employees.map((employee) => ({ id: employee.id, displayName: employee.displayName }))}
-                selectedEmployeeId={selectedEmployeeId}
-                sessionId={selectedSession?.id}
-                workflows={workflows.map((workflow) => ({ id: workflow.id, name: workflow.name }))}
-              />
+                  selectedEmployeeId={selectedEmployeeId}
+                  sessionId={selectedSession?.id}
+                  showUrlExtraction={canExtractUrl(selectedEmployeeDetail)}
+                  workflows={workflows.map((workflow) => ({ id: workflow.id, name: workflow.name }))}
+                />
             </form>
           ) : null}
         </section>
@@ -194,6 +195,25 @@ export default async function ChatPage({
       </div>
     </AppShell>
   );
+}
+
+function canExtractUrl(employee: { skills: Array<{ skill: { key: string; defaultToolsets: string } }> } | null) {
+  if (!employee) return false;
+  const allowedSkillKeys = new Set(["research", "proposal-writing", "grant-support", "tender-grant-tracking", "document-analysis"]);
+  return employee.skills.some((item) => {
+    const toolsets = parseJsonArray(item.skill.defaultToolsets);
+    return allowedSkillKeys.has(item.skill.key) || toolsets.includes("web");
+  });
+}
+
+function parseJsonArray(value?: string | null) {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
 }
 
 function organisationCopy(value: string) {

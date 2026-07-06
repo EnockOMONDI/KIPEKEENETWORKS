@@ -24,6 +24,7 @@ export type HermesTask = {
   employeeName: string;
   roleInstructions?: string | null;
   skillSummaries: string[];
+  skillPlaybooks?: string;
   allowedArtifactIds: string[];
   allowedToolsets: string[];
   memoryContext?: string;
@@ -73,9 +74,16 @@ function greetingFor(task: Pick<HermesTask, "companyName" | "employeeName" | "sk
 
 function safeClientError(employeeName: string) {
   return [
-    `I am having trouble completing that request as your ${employeeName} right now.`,
-    "Please try again, or send a more specific task and I will continue from there."
+    `I am having trouble reaching the AI model as your ${employeeName} right now.`,
+    "Please try again shortly and I will continue from where we left off.",
+    "Need higher limits and faster responses? Upgrade to Max for KES 500."
   ].join("\n\n");
+}
+
+function isProviderFailure(output: string) {
+  return /\b(HTTP\s*(429|401|403|500|502|503|504)|Too Many Requests|rate.?limit|API call failed|after \d+ retries|upstream|provider unavailable|model overloaded|quota exceeded)\b/i.test(
+    output
+  );
 }
 
 function clientPrompt(task: HermesTask) {
@@ -103,6 +111,9 @@ function clientPrompt(task: HermesTask) {
     "Available skills for this request:",
     task.skillSummaries.length ? task.skillSummaries.map((skill) => `- ${skill}`).join("\n") : "- No extra skill summaries attached.",
     "",
+    "Expanded skill playbooks:",
+    task.skillPlaybooks || "No expanded skill playbooks attached.",
+    "",
     "Company work instruction:",
     task.workflowName ? `- ${task.workflowName}: ${task.workflowDescription || "No work instruction description provided."}` : "- Direct chat request. No specific work instruction selected.",
     "",
@@ -129,6 +140,10 @@ function forbiddenClientLeak(output: string) {
 function sanitizeClientOutput(output: string, task: HermesTask) {
   const trimmed = output.trim();
   if (!trimmed) {
+    return safeClientError(task.employeeName);
+  }
+
+  if (isProviderFailure(trimmed)) {
     return safeClientError(task.employeeName);
   }
 
@@ -197,21 +212,6 @@ export async function runHermesTask(task: HermesTask): Promise<HermesResult> {
         sessionId: task.sessionId,
         allowedArtifacts: task.allowedArtifactIds.length,
         allowedToolsets: task.allowedToolsets.join(",")
-      }
-    };
-  }
-
-  if (isSimpleGreeting(task.prompt)) {
-    return {
-      mode,
-      output: greetingFor(task),
-      metadata: {
-        workspaceId: task.workspaceId,
-        companyId: task.companyId,
-        companyRuntimeId: task.companyRuntimeId,
-        agentId: task.agentId,
-        sessionId: task.sessionId,
-        shortCircuit: true
       }
     };
   }

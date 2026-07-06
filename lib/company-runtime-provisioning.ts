@@ -6,6 +6,7 @@ import path from "path";
 import { promisify } from "util";
 import { prisma } from "./db";
 import { hardenHermesClientConfig, minimalHermesClientConfig } from "./hermes-profile-security";
+import { writeRuntimePackage } from "./runtime-package";
 import { logError, logInfo } from "./server-log";
 
 const execFileAsync = promisify(execFile);
@@ -133,6 +134,7 @@ export async function provisionCompanyRuntimeProfile(companyId: string) {
     await chmod(runtimeDir, 0o700).catch(() => undefined);
     await ensureProfile(company.runtime.hermesProfile, `${company.name} company runtime in Kipekee Networks.`);
     await writeRuntimeFiles(company.runtime.hermesProfile, companySoul(company));
+    await writeRuntimePackage(company.id);
     await prisma.companyRuntime.update({
       where: { id: company.runtime.id },
       data: {

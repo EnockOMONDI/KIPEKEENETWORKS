@@ -50,6 +50,7 @@ async function seedCatalog() {
         category: skill.category,
         description: skill.description,
         defaultToolsets: JSON.stringify(skill.defaultToolsets),
+        skillPath: `skills/${skill.key}.md`,
         enabled: true
       },
       create: {
@@ -58,6 +59,7 @@ async function seedCatalog() {
         category: skill.category,
         description: skill.description,
         defaultToolsets: JSON.stringify(skill.defaultToolsets),
+        skillPath: `skills/${skill.key}.md`,
         enabled: true
       }
     });

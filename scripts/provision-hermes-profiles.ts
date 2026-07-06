@@ -5,6 +5,7 @@ import path from "path";
 import { prisma } from "../lib/db";
 import { hardenHermesClientConfig, minimalHermesClientConfig } from "../lib/hermes-profile-security";
 import { companyNamespace, companyRuntimeProfileName } from "../lib/isolation";
+import { writeRuntimePackage } from "../lib/runtime-package";
 
 const hermesBin = process.env.HERMES_BIN || "hermes";
 const hermesRoot = process.env.HERMES_HOME || path.join(os.homedir(), ".kipekee-hermes");
@@ -179,6 +180,7 @@ Rules:
     ensureProfile(runtime.hermesProfile, `${company.name} company runtime in Kipekee Networks.`);
     writeSoul(runtime.hermesProfile, companySoul(company));
     hardenClientProfile(runtime.hermesProfile);
+    await writeRuntimePackage(company.id);
   }
 
   console.log(`Provisioned shared profile and ${companies.length} company runtime profile${companies.length === 1 ? "" : "s"}.`);

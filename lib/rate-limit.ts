@@ -8,6 +8,7 @@ export type RateLimitAction =
   | "invite_accept"
   | "team_invite_create"
   | "chat_create"
+  | "connector_firecrawl_extract"
   | "artifact_upload"
   | "loop_run"
   | "integration_request"
@@ -26,6 +27,7 @@ const policies: Record<RateLimitAction, { limit: number; windowMs: number }> = {
   invite_accept: { limit: 8, windowMs: 30 * 60 * 1000 },
   team_invite_create: { limit: 15, windowMs: 60 * 60 * 1000 },
   chat_create: { limit: 60, windowMs: 60 * 60 * 1000 },
+  connector_firecrawl_extract: { limit: 30, windowMs: 60 * 60 * 1000 },
   artifact_upload: { limit: 20, windowMs: 60 * 60 * 1000 },
   loop_run: { limit: 20, windowMs: 60 * 60 * 1000 },
   integration_request: { limit: 20, windowMs: 60 * 60 * 1000 },

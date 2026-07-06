@@ -8,7 +8,8 @@ const healthEnvKeys = [
   "KIPEKEE_STORAGE_PROVIDER",
   "SUPABASE_URL",
   "SUPABASE_SERVICE_ROLE_KEY",
-  "KIPEKEE_STORAGE_BUCKET"
+  "KIPEKEE_STORAGE_BUCKET",
+  "FIRECRAWL_API_KEY"
 ];
 
 export function healthEnvPresence() {

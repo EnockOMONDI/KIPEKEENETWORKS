@@ -24,6 +24,7 @@ export type HermesTask = {
   employeeName: string;
   roleInstructions?: string | null;
   skillSummaries: string[];
+  skillPlaybooks?: string;
   allowedArtifactIds: string[];
   allowedToolsets: string[];
   memoryContext?: string;
@@ -102,6 +103,9 @@ function clientPrompt(task: HermesTask) {
     "",
     "Available skills for this request:",
     task.skillSummaries.length ? task.skillSummaries.map((skill) => `- ${skill}`).join("\n") : "- No extra skill summaries attached.",
+    "",
+    "Expanded skill playbooks:",
+    task.skillPlaybooks || "No expanded skill playbooks attached.",
     "",
     "Company work instruction:",
     task.workflowName ? `- ${task.workflowName}: ${task.workflowDescription || "No work instruction description provided."}` : "- Direct chat request. No specific work instruction selected.",

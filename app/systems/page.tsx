@@ -5,6 +5,8 @@ import { SystemSubnav, systemKnowledgeLinks } from "@/components/SystemKnowledge
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { isKipekeeAdmin } from "@/lib/roles";
+import { envPresence } from "@/lib/server-log";
+import { standardUploadLimitBytes, upgradeUploadLimitBytes } from "@/lib/upload-policy";
 
 const onlineWindowMs = 45_000;
 const staleJobMinutes = 10;
@@ -99,6 +101,14 @@ export default async function SystemsPage() {
       updatedAt: { gt: new Date(now.getTime() - 24 * 60 * 60 * 1000) }
     }
   });
+  const connectorCallsToday = await prisma.auditLog.count({
+    where: {
+      action: { startsWith: "connector.firecrawl" },
+      createdAt: { gt: new Date(now.getTime() - 24 * 60 * 60 * 1000) }
+    }
+  });
+  const runtimePackageReady = await prisma.companyRuntime.count({ where: { status: { in: ["ACTIVE", "READY"] } } });
+  const connectorEnv = envPresence(["FIRECRAWL_API_KEY"]);
 
   const counts = new Map(jobCounts.map((item) => [item.status, item._count.status]));
   const onlineWorkers = workers.filter((worker) => now.getTime() - worker.lastSeenAt.getTime() < onlineWindowMs);
@@ -155,6 +165,11 @@ export default async function SystemsPage() {
         <Metric label="Documents" value={artifacts} />
         <Metric label="Memory files" value={memoryArtifacts} />
         <Metric label="Tracked storage" value={formatBytes(trackedStorageBytes)} />
+      </div>
+      <div className="mt-5 grid gap-4 md:grid-cols-3">
+        <Metric label="Runtime packages" tone={runtimePackageReady ? "success" : "warning"} value={runtimePackageReady} />
+        <Metric label="Firecrawl connector" tone={connectorEnv.FIRECRAWL_API_KEY ? "success" : "warning"} value={connectorEnv.FIRECRAWL_API_KEY ? "Configured" : "Missing key"} />
+        <Metric label="Connector calls today" tone={connectorCallsToday ? "success" : "neutral"} value={connectorCallsToday} />
       </div>
 
       <div className="mt-6 grid gap-5 lg:grid-cols-[1fr_360px]">
@@ -285,7 +300,8 @@ export default async function SystemsPage() {
               <p>Total tracked: {formatBytes(trackedStorageBytes)}</p>
               <p>Memory indexed: {formatBytes(memoryStorageBytes)}</p>
               <p>Untracked older files: {untrackedStorageFiles}</p>
-              <p>Per-file limit: {formatBytes(10 * 1024 * 1024)}</p>
+              <p>Standard document limit: {formatBytes(standardUploadLimitBytes)}</p>
+              <p>Storage boost limit: {formatBytes(upgradeUploadLimitBytes)}</p>
             </div>
           </Card>
 
@@ -314,6 +330,7 @@ export default async function SystemsPage() {
               <p>Runtime gaps: {runtimeGaps}</p>
               <p>Runtimes not active: {runtimePending}</p>
               <p>Failed jobs today: {failedJobsToday}</p>
+              <p>Firecrawl calls today: {connectorCallsToday}</p>
             </div>
           </Card>
         </div>

@@ -47,13 +47,13 @@ export const systemArchitecture = [
   },
   {
     name: "Company Runtime",
-    summary: "Each organisation has one CompanyRuntime with a Hermes profile. Employees are roles that use the organisation runtime.",
-    files: ["prisma/schema.prisma", "lib/company-runtime-provisioning.ts", "lib/hermes.ts"]
+    summary: "Each organisation has one CompanyRuntime with a Hermes profile and generated runtime package. Employees are roles that use the organisation runtime.",
+    files: ["prisma/schema.prisma", "lib/company-runtime-provisioning.ts", "lib/runtime-package.ts", "lib/hermes.ts"]
   },
   {
     name: "Skills and Work Instructions",
-    summary: "Skills are reusable platform records; company work instructions are stored internally as Workflow/WorkflowStep records.",
-    files: ["lib/seed-data.ts", "prisma/seed.ts", "app/workflows/page.tsx"]
+    summary: "Skills are reusable platform records with expanded playbooks; company work instructions are stored internally as Workflow/WorkflowStep records.",
+    files: ["lib/seed-data.ts", "lib/skill-playbooks.ts", "prisma/seed.ts", "app/workflows/page.tsx"]
   },
   {
     name: "Knowledge and Storage",
@@ -62,8 +62,8 @@ export const systemArchitecture = [
   },
   {
     name: "Connectors and Mailboxes",
-    summary: "Integration and mailbox schema plus request UI exist. Real OAuth/API connector execution is not implemented yet.",
-    files: ["app/integrations/page.tsx", "app/mailboxes/page.tsx", "prisma/schema.prisma"]
+    summary: "Integration and mailbox schema plus request UI exist. Firecrawl URL extraction is implemented through the server-side tool gateway.",
+    files: ["lib/tool-gateway.ts", "app/integrations/page.tsx", "app/mailboxes/page.tsx", "prisma/schema.prisma"]
   },
   {
     name: "Response and Audit",
@@ -151,18 +151,18 @@ export const runtimeComponents: KnowledgeItem[] = [
   {
     title: "CompanyRuntime",
     status: "Complete",
-    completion: 90,
-    summary: "One runtime/profile record per organisation is enforced by CompanyRuntime.companyId unique.",
-    evidence: ["prisma/schema.prisma", "lib/actions.ts", "lib/company-runtime-provisioning.ts"],
-    risks: ["Profile provisioning can be deferred when local Hermes files cannot be written."],
-    next: ["Expose clearer admin remediation when a runtime is pending."]
+    completion: 92,
+    summary: "One runtime/profile record per organisation is enforced by CompanyRuntime.companyId unique and runtime packages are generated from database state.",
+    evidence: ["prisma/schema.prisma", "lib/actions.ts", "lib/company-runtime-provisioning.ts", "lib/runtime-package.ts"],
+    risks: ["Profile/package provisioning can be deferred when local Hermes files cannot be written."],
+    next: ["Expose clearer admin remediation when a runtime package is pending."]
   },
   {
     title: "Prompt Builder",
     status: "Complete",
-    completion: 85,
-    summary: "Prompt includes organisation context, employee role, skills, company work instruction, brand voice, business rules, approved memory, and user request.",
-    evidence: ["lib/hermes.ts"],
+    completion: 88,
+    summary: "Prompt includes organisation context, employee role, skill summaries, expanded skill playbooks, company work instruction, brand voice, business rules, approved memory, URL extraction context, and user request.",
+    evidence: ["lib/hermes.ts", "lib/skill-playbooks.ts", "lib/tool-gateway.ts"],
     risks: ["Responses are sanitized after execution, but advanced prompt-injection testing should continue."],
     next: ["Add automated tests for forbidden output sanitization."]
   },
@@ -208,9 +208,9 @@ export const dataArchitecture: KnowledgeItem[] = [
   {
     title: "AI workforce",
     status: "Complete",
-    completion: 85,
-    summary: "EmployeeTemplate, CompanyEmployee, Skill, EmployeeSkill, Workflow, WorkflowStep, and EmployeeWorkflow model reusable skills and organisation-specific work instructions.",
-    evidence: ["prisma/schema.prisma", "lib/seed-data.ts", "app/employees/page.tsx", "app/workflows/page.tsx"],
+    completion: 88,
+    summary: "EmployeeTemplate, CompanyEmployee, Skill, EmployeeSkill, Workflow, WorkflowStep, and EmployeeWorkflow model reusable skills and organisation-specific work instructions. Proposal and Tender/Grant playbooks are formalized.",
+    evidence: ["prisma/schema.prisma", "lib/seed-data.ts", "lib/skill-playbooks.ts", "app/employees/page.tsx", "app/workflows/page.tsx"],
     risks: ["Workflow is still the internal table name while UI says work instructions; this is acceptable but should be documented for developers."],
     next: ["Add versioning for edited work instructions."]
   },
@@ -247,15 +247,24 @@ export const dataArchitecture: KnowledgeItem[] = [
   {
     title: "Integrations and email",
     status: "Foundation",
-    completion: 35,
-    summary: "IntegrationConnection, IntegrationAccess, Mailbox, MailboxAccess, EmailMessage, and EmailDraft exist as permission foundation.",
-    evidence: ["prisma/schema.prisma", "app/integrations/page.tsx", "app/mailboxes/page.tsx"],
-    risks: ["Real OAuth, sync, retries, webhooks, and connector execution are not implemented."],
-    next: ["Build one connector end-to-end before adding additional providers."]
+    completion: 42,
+    summary: "IntegrationConnection, IntegrationAccess, Mailbox, MailboxAccess, EmailMessage, and EmailDraft exist as permission foundation. Firecrawl URL extraction runs through the server-side connector gateway.",
+    evidence: ["prisma/schema.prisma", "app/integrations/page.tsx", "app/mailboxes/page.tsx", "lib/tool-gateway.ts"],
+    risks: ["Real OAuth, sync, retries, webhooks, and send connector execution are not implemented."],
+    next: ["Build OAuth connector after Firecrawl gateway behavior is stable."]
   }
 ];
 
 export const integrationStatus: KnowledgeItem[] = [
+  {
+    title: "Firecrawl URL extraction",
+    status: "Partial",
+    completion: 65,
+    summary: "Firecrawl extracts one approved public URL through the Kipekee Tool Gateway for employees with web/research/proposal/tender skills.",
+    evidence: ["lib/tool-gateway.ts", "lib/actions.ts", "components/ChatComposer.tsx", "app/systems/page.tsx"],
+    risks: ["No broad crawling, source queues, or cost dashboards yet. FIRECRAWL_API_KEY must be configured server-side."],
+    next: ["Add source collection records and cost tracking before enabling larger crawls."]
+  },
   {
     title: "Supabase database and storage",
     status: "Partial",
@@ -420,12 +429,12 @@ export const platformAudit: KnowledgeItem[] = [
   },
   {
     title: "Connectors",
-    status: "Foundation",
-    completion: 30,
-    summary: "Connector schema/UI exists; real provider runtimes are pending.",
-    evidence: ["app/integrations/page.tsx", "prisma/schema.prisma"],
-    risks: ["No actual external sync/send behavior."],
-    next: ["Implement one connector end-to-end."]
+    status: "Partial",
+    completion: 45,
+    summary: "Connector schema/UI exists and Firecrawl URL extraction is implemented through the server-side tool gateway.",
+    evidence: ["app/integrations/page.tsx", "prisma/schema.prisma", "lib/tool-gateway.ts"],
+    risks: ["No OAuth sync/send behavior yet; Firecrawl is limited to one URL extraction per request."],
+    next: ["Add connector source records and cost controls before expanding external APIs."]
   },
   {
     title: "UI",
@@ -469,7 +478,7 @@ export const recommendations = [
     priority: "Medium",
     items: [
       "Add query tracing and slow-query monitoring once real clients generate data.",
-      "Implement one connector end-to-end before expanding the connector catalog.",
+      "Add connector source records, cost limits, and monitoring before expanding beyond Firecrawl.",
       "Add versioning for company work instructions and employee role instructions."
     ]
   },

@@ -2,6 +2,7 @@ import { prisma } from "../lib/db";
 import { runHermesTask } from "../lib/hermes";
 import { verifyHermesJobSignature } from "../lib/hermes-job-signing";
 import { buildMemoryContextFromArtifacts } from "../lib/memory-context";
+import { playbookPromptSection } from "../lib/skill-playbooks";
 
 const workerId = process.env.KIPEKEE_WORKER_ID || `worker-${process.pid}`;
 const pollIntervalMs = Number(process.env.KIPEKEE_WORKER_POLL_MS || 3000);
@@ -259,6 +260,8 @@ async function processOne() {
         ].filter(Boolean).join("\n")
       : null;
 
+    const artifactMemory = buildMemoryContextFromArtifacts(canonical.artifactAccess.map((item) => item.artifact));
+    const connectorMemory = job.memoryContext?.includes("External source extraction:") ? job.memoryContext : "";
     const result = await runHermesTask({
       workspaceId: job.workspaceId,
       companyId: canonical.companyId,
@@ -273,10 +276,11 @@ async function processOne() {
       employeeName: canonical.displayName,
       roleInstructions: canonical.roleInstructions,
       skillSummaries: canonical.skills.map((item) => `${item.skill.name}: ${item.skill.description}`),
+      skillPlaybooks: playbookPromptSection(canonical.skills.map((item) => item.skill.key)),
       prompt: job.prompt,
       allowedArtifactIds: canonical.artifactAccess.map((item) => item.artifactId),
       allowedToolsets: parseJsonArray(job.allowedToolsets),
-      memoryContext: buildMemoryContextFromArtifacts(canonical.artifactAccess.map((item) => item.artifact)),
+      memoryContext: [artifactMemory, connectorMemory].filter(Boolean).join("\n\n---\n\n"),
       brandVoice,
       businessRules
     });

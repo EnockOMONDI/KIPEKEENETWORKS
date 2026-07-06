@@ -87,8 +87,15 @@ export const skillCatalog = [
     key: "proposal-writing",
     name: "Proposal Writing",
     category: "sales",
-    description: "Drafts proposals, quotations, assumptions, exclusions, deliverables, timelines, and executive summaries.",
-    defaultToolsets: ["chat", "memory", "documents", "audit"]
+    description: "Drafts approval-ready proposals, quotations, tender responses, assumptions, exclusions, deliverables, timelines, executive summaries, and review checklists.",
+    defaultToolsets: ["chat", "memory", "documents", "web", "audit", "firecrawl.extractUrl"]
+  },
+  {
+    key: "tender-grant-tracking",
+    name: "Tender / Grant Tracking",
+    category: "research",
+    description: "Extracts, classifies, scores, and tracks tenders, grants, RFPs, donor calls, procurement notices, deadlines, eligibility, and required documents.",
+    defaultToolsets: ["chat", "memory", "documents", "web", "audit", "firecrawl.extractUrl"]
   },
   {
     key: "sales-follow-up",
@@ -194,19 +201,19 @@ export const employeeTemplates = [
   { name: "CEO Assistant", skills: ["business-briefing", "company-onboarding", "research", "email-drafting", "data-reporting"] },
   { name: "Creative Director", skills: ["brand-management", "marketing-planning", "content-creation"] },
   { name: "Marketing Manager", skills: ["marketing-planning", "content-creation", "research", "brand-management", "data-reporting"] },
-  { name: "Proposal Writer", skills: ["proposal-writing", "document-analysis", "research", "sales-follow-up"] },
+  { name: "Proposal Writer", skills: ["proposal-writing", "tender-grant-tracking", "document-analysis", "research", "sales-follow-up"] },
   { name: "Finance Assistant", skills: ["finance-support", "document-analysis", "email-drafting", "data-reporting"] },
   { name: "Software Engineer", skills: ["software-planning", "document-analysis", "research", "operations-planning"] },
   { name: "Brand Manager", skills: ["brand-management", "content-creation", "marketing-planning", "knowledge-structuring"] },
   { name: "Social Media Manager", skills: ["content-creation", "marketing-planning", "brand-management", "customer-support"] },
-  { name: "Research Analyst", skills: ["research", "document-analysis", "business-briefing", "data-reporting"] },
+  { name: "Research Analyst", skills: ["research", "tender-grant-tracking", "document-analysis", "business-briefing", "data-reporting"] },
   { name: "Customer Support", skills: ["customer-support", "email-drafting", "document-analysis", "crm-support"] },
   { name: "Sales Assistant", skills: ["proposal-writing", "sales-follow-up", "crm-support", "customer-support", "email-drafting"] },
   { name: "CRM Assistant", skills: ["crm-support", "sales-follow-up", "customer-support", "business-briefing"] },
   { name: "Operations Assistant", skills: ["operations-planning", "business-briefing", "procurement-support", "finance-support", "data-reporting"] },
   { name: "HR Assistant", skills: ["hr-support", "document-analysis", "email-drafting", "operations-planning"] },
   { name: "Travel Consultant", skills: ["travel-planning", "proposal-writing", "research", "customer-support", "email-drafting"] },
-  { name: "Grant Assistant", skills: ["grant-support", "proposal-writing", "research", "finance-support", "document-analysis"] },
+  { name: "Grant Assistant", skills: ["grant-support", "tender-grant-tracking", "proposal-writing", "research", "finance-support", "document-analysis"] },
   { name: "Education Administrator", skills: ["education-admin", "customer-support", "email-drafting", "document-analysis", "operations-planning"] }
 ];
 
@@ -245,6 +252,28 @@ export function safeOrganisationType(value: string) {
 }
 
 export const workflowTemplateCatalog = [
+  {
+    key: "tender-grant-tracking",
+    name: "Tender and grant tracking",
+    category: "research",
+    description: "Extract a tender, grant, RFP, donor call, or procurement notice from an uploaded file or approved URL, then prepare fit scoring and next actions.",
+    triggerType: "MANUAL",
+    schedule: null,
+    approvalPolicy: "APPROVAL_REQUIRED",
+    defaultEmployeeName: "Grant Assistant",
+    steps: [
+      {
+        skillKey: "tender-grant-tracking",
+        instruction: "Extract issuer, deadline, eligibility, requirements, documents, submission process, risks, and source evidence from the opportunity.",
+        requiresApproval: false
+      },
+      {
+        skillKey: "proposal-writing",
+        instruction: "Prepare pursuit recommendation, proposal outline, missing questions, approval checklist, and handoff notes.",
+        requiresApproval: true
+      }
+    ]
+  },
   {
     key: "organisation-setup",
     name: "Organisation setup",
@@ -563,7 +592,7 @@ export const workflowTemplateCatalog = [
 ];
 
 export const starterWorkflowTemplates = workflowTemplateCatalog.filter((workflow) =>
-  ["organisation-setup", "document-intake-summary", "weekly-marketing-plan", "proposal-draft", "customer-support-triage", "monthly-business-report"].includes(workflow.key)
+  ["organisation-setup", "document-intake-summary", "weekly-marketing-plan", "proposal-draft", "tender-grant-tracking", "customer-support-triage", "monthly-business-report"].includes(workflow.key)
 );
 
 export const industryTemplates = [
@@ -581,8 +610,8 @@ export const industryTemplates = [
     ],
     knowledgeCollections: ["Organization profile", "Company knowledge", "Clients", "Services", "Templates", "Policies"],
     recommendedEmployees: ["CEO Assistant", "Marketing Manager", "Proposal Writer", "Finance Assistant", "Customer Support", "Research Analyst", "Operations Assistant", "Sales Assistant"],
-    skillKeys: ["business-briefing", "company-onboarding", "knowledge-structuring", "document-analysis", "marketing-planning", "content-creation", "proposal-writing", "finance-support", "operations-planning", "research", "customer-support", "email-drafting", "sales-follow-up", "crm-support", "data-reporting"],
-    workflowTemplateKeys: ["organisation-setup", "document-intake-summary", "weekly-marketing-plan", "content-calendar", "proposal-draft", "sales-follow-up", "customer-support-triage", "mailbox-triage-draft", "invoice-review", "monthly-business-report", "sop-checklist"]
+    skillKeys: ["business-briefing", "company-onboarding", "knowledge-structuring", "document-analysis", "marketing-planning", "content-creation", "proposal-writing", "tender-grant-tracking", "finance-support", "operations-planning", "research", "customer-support", "email-drafting", "sales-follow-up", "crm-support", "data-reporting"],
+    workflowTemplateKeys: ["organisation-setup", "document-intake-summary", "weekly-marketing-plan", "content-calendar", "proposal-draft", "tender-grant-tracking", "sales-follow-up", "customer-support-triage", "mailbox-triage-draft", "invoice-review", "monthly-business-report", "sop-checklist"]
   },
   {
     key: "travel-agency",
@@ -598,8 +627,8 @@ export const industryTemplates = [
     ],
     knowledgeCollections: ["Organization profile", "Destinations", "Suppliers", "Visa Requirements", "Client Itineraries", "Packages", "Policies"],
     recommendedEmployees: ["CEO Assistant", "Marketing Manager", "Travel Consultant", "Proposal Writer", "Customer Support", "Sales Assistant", "Research Analyst", "Operations Assistant"],
-    skillKeys: ["business-briefing", "company-onboarding", "knowledge-structuring", "document-analysis", "marketing-planning", "content-creation", "proposal-writing", "research", "customer-support", "email-drafting", "sales-follow-up", "crm-support", "travel-planning", "data-reporting"],
-    workflowTemplateKeys: ["organisation-setup", "document-intake-summary", "travel-proposal", "sales-follow-up", "customer-support-triage", "mailbox-triage-draft", "weekly-marketing-plan", "content-calendar", "monthly-business-report"]
+    skillKeys: ["business-briefing", "company-onboarding", "knowledge-structuring", "document-analysis", "marketing-planning", "content-creation", "proposal-writing", "tender-grant-tracking", "research", "customer-support", "email-drafting", "sales-follow-up", "crm-support", "travel-planning", "data-reporting"],
+    workflowTemplateKeys: ["organisation-setup", "document-intake-summary", "travel-proposal", "tender-grant-tracking", "sales-follow-up", "customer-support-triage", "mailbox-triage-draft", "weekly-marketing-plan", "content-calendar", "monthly-business-report"]
   },
   {
     key: "foundation-ngo",
@@ -615,8 +644,8 @@ export const industryTemplates = [
     ],
     knowledgeCollections: ["Organization profile", "Grants", "Donors", "Programmes", "Beneficiaries", "Partnerships", "Reports"],
     recommendedEmployees: ["CEO Assistant", "Grant Assistant", "Proposal Writer", "Research Analyst", "Finance Assistant", "Customer Support", "Operations Assistant"],
-    skillKeys: ["business-briefing", "company-onboarding", "knowledge-structuring", "document-analysis", "proposal-writing", "research", "finance-support", "email-drafting", "grant-support", "data-reporting", "operations-planning"],
-    workflowTemplateKeys: ["organisation-setup", "document-intake-summary", "grant-application-review", "proposal-draft", "invoice-review", "monthly-business-report", "sop-checklist"]
+    skillKeys: ["business-briefing", "company-onboarding", "knowledge-structuring", "document-analysis", "proposal-writing", "tender-grant-tracking", "research", "finance-support", "email-drafting", "grant-support", "data-reporting", "operations-planning"],
+    workflowTemplateKeys: ["organisation-setup", "document-intake-summary", "tender-grant-tracking", "grant-application-review", "proposal-draft", "invoice-review", "monthly-business-report", "sop-checklist"]
   },
   {
     key: "school-education",

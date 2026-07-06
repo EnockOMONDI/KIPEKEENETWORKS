@@ -16,7 +16,9 @@ import { canManageBilling, canManageCompany, canManageTeam, isKipekeeAdmin, role
 import { employeeTemplates, safeOrganisationType, starterWorkflowTemplates } from "./seed-data";
 import { hashPassword, hashToken } from "./security";
 import { logError, logInfo } from "./server-log";
+import { playbookPromptSection } from "./skill-playbooks";
 import { storeArtifactObject } from "./storage";
+import { extractUrlWithFirecrawl, firecrawlContextBlock } from "./tool-gateway";
 import { validateArtifactUpload } from "./upload-policy";
 const allowedIntegrationProviders = new Set([
   "whatsapp",
@@ -402,7 +404,7 @@ export async function uploadArtifactAction(formData: FormData) {
   redirect(`${returnTo}?uploaded=1`);
 }
 
-async function buildJobInput(user: any, employeeId: string, prompt: string, sessionId?: string, workflowId?: string) {
+async function buildJobInput(user: any, employeeId: string, prompt: string, sessionId?: string, workflowId?: string, sourceUrl?: string) {
   const employee = await prisma.companyEmployee.findFirstOrThrow({
     where: { id: employeeId, companyId: user.companyId },
     include: {
@@ -469,6 +471,20 @@ async function buildJobInput(user: any, employeeId: string, prompt: string, sess
   const memoryContext = buildMemoryContextFromArtifacts(access.map((item) => item.artifact));
   const skillKeys = employee.skills.map((item) => item.skill.key);
   const allowedToolsets = Array.from(new Set(employee.skills.flatMap((item) => parseJsonArray(item.skill.defaultToolsets))));
+  const sourceContext = sourceUrl
+    ? firecrawlContextBlock(
+        await extractUrlWithFirecrawl({
+          employeeId,
+          rawUrl: sourceUrl,
+          user: {
+            id: user.id,
+            email: user.email,
+            workspaceId: user.workspaceId,
+            companyId: user.companyId
+          }
+        })
+      )
+    : "";
   const brandVoice = await prisma.brandVoice.findUnique({ where: { companyId: user.companyId } });
   const businessRules = await prisma.businessRule.findMany({
     where: {
@@ -493,7 +509,7 @@ async function buildJobInput(user: any, employeeId: string, prompt: string, sess
     skillKeys: JSON.stringify(skillKeys),
     allowedArtifactIds: JSON.stringify(access.map((item) => item.artifactId)),
     allowedToolsets: JSON.stringify(allowedToolsets.length ? allowedToolsets : ["chat", "documents", "memory", "audit"]),
-    memoryContext
+    memoryContext: [memoryContext, sourceContext].filter(Boolean).join("\n\n---\n\n")
   };
 
   return {
@@ -504,6 +520,7 @@ async function buildJobInput(user: any, employeeId: string, prompt: string, sess
     brandVoice,
     businessRules,
     access,
+    skillPlaybooks: playbookPromptSection(skillKeys),
     jobData: {
       ...jobData,
       jobSignature: signHermesJob(jobData)
@@ -518,6 +535,7 @@ export async function chatAction(formData: FormData) {
   const prompt = String(formData.get("prompt") ?? "").trim();
   const existingSessionId = String(formData.get("sessionId") ?? "");
   const workflowId = String(formData.get("workflowId") ?? "") || undefined;
+  const sourceUrl = String(formData.get("sourceUrl") ?? "").trim() || undefined;
 
   if (!employeeId || !prompt) {
     redirect("/chat");
@@ -529,6 +547,7 @@ export async function chatAction(formData: FormData) {
     employeeId,
     existingSessionId: existingSessionId || null,
     workflowId: workflowId || null,
+    sourceUrl: sourceUrl || null,
     promptLength: prompt.length
   });
   await enforceRateLimitOrRedirect("chat_create", [`company:${user.companyId}`, `user:${user.id}`, `employee:${employeeId}`], "/chat");
@@ -536,8 +555,11 @@ export async function chatAction(formData: FormData) {
 
   let input: Awaited<ReturnType<typeof buildJobInput>>;
   try {
-    input = await buildJobInput(user, employeeId, prompt, existingSessionId, workflowId);
+    input = await buildJobInput(user, employeeId, prompt, existingSessionId, workflowId, sourceUrl);
   } catch (error) {
+    if (error instanceof RateLimitError) {
+      redirect("/chat?error=rate-limit");
+    }
     logError("chat.submit.build_job_input_failed", error, {
       workspaceId: user.workspaceId,
       companyId: user.companyId,

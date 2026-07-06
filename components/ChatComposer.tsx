@@ -27,6 +27,7 @@ export function ChatComposer({
   employees,
   selectedEmployeeId,
   sessionId,
+  showUrlExtraction = false,
   workflows = []
 }: {
   conversations?: Array<{
@@ -40,6 +41,7 @@ export function ChatComposer({
   employees: Array<{ id: string; displayName: string }>;
   selectedEmployeeId?: string;
   sessionId?: string;
+  showUrlExtraction?: boolean;
   workflows?: Array<{ id: string; name: string }>;
 }) {
   return (
@@ -113,8 +115,19 @@ export function ChatComposer({
         />
         <ChatSubmit />
       </div>
+      {showUrlExtraction ? (
+        <label className="mt-3 block text-xs font-semibold text-graphite">
+          Extract one public URL for this request
+          <input
+            className="mt-2 min-h-10 w-full rounded-2xl border border-violetline bg-paper px-3 py-2 text-sm font-medium text-ink outline-none"
+            name="sourceUrl"
+            placeholder="https://example.com/tender-or-grant-page"
+            type="url"
+          />
+        </label>
+      ) : null}
       <div className="mt-3 flex gap-2 overflow-x-auto pb-1 text-xs font-semibold text-graphite">
-        {["/proposal", "/email", "/upload", "/summarize", "/task", "/instruction"].map((command) => (
+        {["/proposal", "/tender", "/grant", "/email", "/upload", "/summarize", "/task", "/instruction"].map((command) => (
           <span className="shrink-0 rounded-xl bg-[#f5f0ff] px-3 py-2" key={command}>
             {command}
           </span>

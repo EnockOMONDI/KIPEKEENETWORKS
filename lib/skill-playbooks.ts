@@ -84,9 +84,13 @@ export const skillPlaybooks: Record<string, SkillPlaybook> = {
 
 export function playbookMarkdown(playbook: SkillPlaybook) {
   return [
-    `# ${playbook.title} Skill`,
+    `# ${playbook.title} Employee Capability`,
     "",
     `Version: ${playbook.version}`,
+    "",
+    "Type: Kipekee platform capability playbook",
+    "",
+    "This is business guidance for an AI employee. It is not a native Hermes executable skill. Hermes chooses the relevant runtime skills/tools separately, subject to Kipekee permissions and approval rules.",
     "",
     "## Purpose",
     playbook.purpose,
@@ -120,7 +124,7 @@ export function playbooksForSkillKeys(skillKeys: string[]) {
 export function playbookPromptSection(skillKeys: string[]) {
   const playbooks = playbooksForSkillKeys(skillKeys);
   if (!playbooks.length) {
-    return "No expanded skill playbooks attached.";
+    return "No expanded employee capability playbooks attached.";
   }
   return playbooks.map(playbookMarkdown).join("\n\n---\n\n");
 }

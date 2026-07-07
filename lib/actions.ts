@@ -15,7 +15,7 @@ import { assertSameOrigin, assertValidEmail } from "./request-security";
 import { canManageBilling, canManageCompany, canManageTeam, isKipekeeAdmin, roles } from "./roles";
 import { employeeTemplates, safeOrganisationType, starterWorkflowTemplates } from "./seed-data";
 import { hashPassword, hashToken } from "./security";
-import { logError, logInfo } from "./server-log";
+import { logError, logInfo, logWarn } from "./server-log";
 import { playbookPromptSection } from "./skill-playbooks";
 import { storeArtifactObject } from "./storage";
 import { extractUrlWithFirecrawl, firecrawlContextBlock } from "./tool-gateway";
@@ -113,6 +113,11 @@ function parseJsonArray(value?: string | null) {
   } catch {
     return [];
   }
+}
+
+function firstPromptUrl(prompt: string) {
+  const match = prompt.match(/https?:\/\/[^\s<>"')\]]+/i);
+  return match?.[0]?.replace(/[.,;:!?]+$/, "");
 }
 
 async function assignDefaultSkills(employeeId: string, skillKeys: string[]) {
@@ -471,11 +476,17 @@ async function buildJobInput(user: any, employeeId: string, prompt: string, sess
   const memoryContext = buildMemoryContextFromArtifacts(access.map((item) => item.artifact));
   const skillKeys = employee.skills.map((item) => item.skill.key);
   const allowedToolsets = Array.from(new Set(employee.skills.flatMap((item) => parseJsonArray(item.skill.defaultToolsets))));
-  const sourceContext = sourceUrl
-    ? firecrawlContextBlock(
+  const explicitSourceUrl = sourceUrl?.trim();
+  const detectedSourceUrl = explicitSourceUrl ? undefined : firstPromptUrl(prompt);
+  const urlForExtraction = explicitSourceUrl || detectedSourceUrl;
+  let sourceContext = "";
+
+  if (urlForExtraction) {
+    try {
+      sourceContext = firecrawlContextBlock(
         await extractUrlWithFirecrawl({
           employeeId,
-          rawUrl: sourceUrl,
+          rawUrl: urlForExtraction,
           user: {
             id: user.id,
             email: user.email,
@@ -483,8 +494,19 @@ async function buildJobInput(user: any, employeeId: string, prompt: string, sess
             companyId: user.companyId
           }
         })
-      )
-    : "";
+      );
+    } catch (error) {
+      if (explicitSourceUrl) {
+        throw error;
+      }
+      logWarn("chat.url_extraction.skipped", {
+        workspaceId: user.workspaceId,
+        companyId: user.companyId,
+        employeeId,
+        reason: error instanceof Error ? error.message : "URL extraction unavailable"
+      });
+    }
+  }
   const brandVoice = await prisma.brandVoice.findUnique({ where: { companyId: user.companyId } });
   const businessRules = await prisma.businessRule.findMany({
     where: {

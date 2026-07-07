@@ -31,8 +31,8 @@ export async function buildRuntimePackage(companyId: string) {
     throw new Error("Company runtime does not exist.");
   }
 
-  const skillKeys = Array.from(new Set(company.employees.flatMap((employee) => employee.skills.map((item) => item.skill.key))));
-  const playbooks = playbooksForSkillKeys(skillKeys);
+  const capabilityKeys = Array.from(new Set(company.employees.flatMap((employee) => employee.skills.map((item) => item.skill.key))));
+  const playbooks = playbooksForSkillKeys(capabilityKeys);
   const allowedTools = Array.from(new Set(playbooks.flatMap((playbook) => playbook.allowedTools)));
   const schedules = company.workflows.filter((workflow) => workflow.triggerType === "SCHEDULED" && workflow.schedule);
 
@@ -46,12 +46,13 @@ export async function buildRuntimePackage(companyId: string) {
         "",
         "## Runtime source of truth",
         "The Kipekee database is authoritative. These files are generated execution context for Hermes and cannot override organisation permissions.",
+        "This Eve-style runtime package organizes company context for Hermes. Native Hermes skills/tools live separately in the configured Hermes home and are selected by Hermes only when allowed.",
         "",
         "## Brand voice",
         company.brandVoice ? `Tone: ${company.brandVoice.tone}\n${company.brandVoice.styleRules}` : "No brand voice configured yet.",
         "",
         "## Active employees",
-        company.employees.map((employee) => `- ${employee.displayName}: ${employee.skills.map((item) => item.skill.name).join(", ") || "No skills enabled"}`).join("\n") || "- None",
+        company.employees.map((employee) => `- ${employee.displayName}: ${employee.skills.map((item) => item.skill.name).join(", ") || "No capability packs enabled"}`).join("\n") || "- None",
         "",
         "## Work instructions",
         company.workflows.map((workflow) => `- ${workflow.name}: ${workflow.description}`).join("\n") || "- None"
@@ -64,8 +65,10 @@ export async function buildRuntimePackage(companyId: string) {
         "approvalFirst: true",
         "allowedTools:",
         yamlList(allowedTools),
-        "enabledSkillPlaybooks:",
+        "enabledCapabilityPlaybooks:",
         yamlList(playbooks.map((playbook) => playbook.key)),
+        "nativeHermesSkillsSource:",
+        `  - ${JSON.stringify(path.join(hermesRoot, "skills"))}`,
         "forbiddenDisclosure:",
         "  - infrastructure",
         "  - repository",
@@ -95,8 +98,8 @@ export async function buildRuntimePackage(companyId: string) {
         ? schedules.map((workflow) => `- ${workflow.name}: ${workflow.schedule}`).join("\n")
         : "No scheduled work instructions configured yet."
     },
-    skills: playbooks.map((playbook) => ({
-      path: `skills/${playbook.key}.md`,
+    capabilities: playbooks.map((playbook) => ({
+      path: `capabilities/${playbook.key}.md`,
       content: playbookMarkdown(playbook)
     }))
   };
@@ -115,10 +118,10 @@ export async function writeRuntimePackage(companyId: string) {
     await chmod(filePath, 0o600).catch(() => undefined);
   }
 
-  for (const skill of runtimePackage.skills) {
-    const filePath = path.join(dir, skill.path);
+  for (const capability of runtimePackage.capabilities) {
+    const filePath = path.join(dir, capability.path);
     await mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
-    await writeFile(filePath, `${skill.content.trim()}\n`, "utf8");
+    await writeFile(filePath, `${capability.content.trim()}\n`, "utf8");
     await chmod(filePath, 0o600).catch(() => undefined);
   }
 

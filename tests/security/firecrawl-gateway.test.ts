@@ -33,6 +33,8 @@ describe("Firecrawl tool gateway", () => {
   it("passes extracted source context through signed Hermes jobs", () => {
     expect(actions).toContain("extractUrlWithFirecrawl");
     expect(actions).toContain("firecrawlContextBlock");
+    expect(actions).toContain("firstPromptUrl");
+    expect(actions).toContain("chat.url_extraction.skipped");
     expect(actions).toContain("memoryContext: [memoryContext, sourceContext]");
     expect(actions).toContain("jobSignature: signHermesJob(jobData)");
   });

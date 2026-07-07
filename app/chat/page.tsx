@@ -5,7 +5,7 @@ import {
   EmptyState,
   Notice
 } from "@/components/AppShell";
-import { ChatAutoRefresh } from "@/components/ChatAutoRefresh";
+import { CancelJobButton, ChatAutoRefresh, JobWorkingText } from "@/components/ChatAutoRefresh";
 import { ChatComposer } from "@/components/ChatComposer";
 import { chatAction } from "@/lib/actions";
 import { requireCompanyContext } from "@/lib/auth";
@@ -116,7 +116,7 @@ export default async function ChatPage({
           <Notice description={notice.description} title={notice.title} tone={notice.tone} />
         </div>
       ) : null}
-      <ChatAutoRefresh active={activeJobs.length > 0} />
+      <ChatAutoRefresh active={activeJobs.length > 0} sessionId={selectedSession?.id} />
       <div className="grid min-h-[calc(100vh-74px)] gap-0 overflow-hidden rounded-[28px] border border-violetline bg-white shadow-panel xl:grid-cols-[320px_minmax(0,1fr)_340px] xl:rounded-none xl:border-x xl:border-y-0">
         <EmployeeRail
           employees={employees.map((employee) => ({
@@ -164,7 +164,7 @@ export default async function ChatPage({
               />
             )}
             {activeJobs.map((job) => (
-              <WorkingCard employeeName={job.employeeName} key={job.id} status={job.status} />
+              <WorkingCard employeeName={job.employeeName} jobId={job.id} key={job.id} status={job.status} />
             ))}
           </div>
 
@@ -354,8 +354,6 @@ function AssistantWorkspace({
   content: string;
   employeeName: string;
 }) {
-  const summary = content.split("\n").find((line) => line.trim())?.replace(/^[-#*\s]+/, "").slice(0, 180) ?? "Response ready.";
-
   return (
     <article className="mr-auto max-w-[94%] overflow-hidden rounded-[24px] border border-violetline bg-white md:max-w-[84%]">
       <div className="flex items-center justify-between gap-3 px-5 py-4">
@@ -365,16 +363,12 @@ function AssistantWorkspace({
           </div>
           <div>
             <p className="text-sm font-semibold">{employeeName}</p>
-            <p className="text-xs text-graphite">Structured response</p>
+            <p className="text-xs text-graphite">Response ready</p>
           </div>
         </div>
         <Badge tone="success">Done</Badge>
       </div>
-      <section className="border-t border-violetline bg-paper px-5 py-4">
-        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-forest">Summary</p>
-        <p className="mt-2 text-sm leading-6 text-ink">{summary}</p>
-      </section>
-      <section className="px-5 py-4">
+      <section className="border-t border-violetline px-5 py-4">
         <p className="whitespace-pre-wrap text-sm leading-7 text-graphite">{content}</p>
       </section>
       <KnowledgeGatheringCard artifacts={artifacts} />
@@ -426,17 +420,20 @@ function KnowledgeGatheringCard({
   );
 }
 
-function WorkingCard({ employeeName, status }: { employeeName: string; status: string }) {
+function WorkingCard({ employeeName, jobId, status }: { employeeName: string; jobId: string; status: string }) {
   return (
     <article className="mr-auto max-w-[94%] rounded-[24px] border border-forest/20 bg-[#f5f0ff] px-5 py-4 md:max-w-[84%]">
-      <div className="flex items-center gap-3">
-        <div className="grid h-10 w-10 place-items-center rounded-full bg-white text-forest">
-          <Clock3 className="animate-pulse" size={18} />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="grid h-10 w-10 place-items-center rounded-full bg-white text-forest">
+            <Clock3 className="animate-pulse" size={18} />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-forest">{employeeName} is working</p>
+            <p className="mt-1 text-xs text-graphite"><JobWorkingText status={status} /></p>
+          </div>
         </div>
-        <div>
-          <p className="text-sm font-semibold text-forest">{employeeName} is working</p>
-          <p className="mt-1 text-xs text-graphite">{status === "PENDING" ? "Getting started" : "Gathering context and drafting the answer"}</p>
-        </div>
+        <CancelJobButton jobId={jobId} />
       </div>
     </article>
   );

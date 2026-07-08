@@ -46,4 +46,14 @@ describe("Hermes client output safety", () => {
     expect(worker).not.toContain("console.error(`[${workerId}] Failed job ${job.id}: ${error");
     expect(worker).not.toContain("error: error instanceof Error ? error.message : String(error)");
   });
+
+  it("uses configurable Hermes timeouts and classifies timeout failures", () => {
+    const hermes = readFileSync(path.join(root, "lib/hermes.ts"), "utf8");
+
+    expect(hermes).toContain("KIPEKEE_HERMES_TIMEOUT_MS");
+    expect(hermes).toContain("return 240_000");
+    expect(hermes).toContain("hermesTimeoutMs: timeout");
+    expect(hermes).toContain("failure?.signal === \"SIGTERM\"");
+    expect(hermes).toContain("return \"hermes_timeout\"");
+  });
 });

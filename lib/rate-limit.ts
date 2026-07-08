@@ -9,6 +9,7 @@ export type RateLimitAction =
   | "team_invite_create"
   | "chat_create"
   | "connector_firecrawl_extract"
+  | "connector_prismfy_search"
   | "artifact_upload"
   | "loop_run"
   | "integration_request"
@@ -28,6 +29,7 @@ const policies: Record<RateLimitAction, { limit: number; windowMs: number }> = {
   team_invite_create: { limit: 15, windowMs: 60 * 60 * 1000 },
   chat_create: { limit: 60, windowMs: 60 * 60 * 1000 },
   connector_firecrawl_extract: { limit: 30, windowMs: 60 * 60 * 1000 },
+  connector_prismfy_search: { limit: 40, windowMs: 60 * 60 * 1000 },
   artifact_upload: { limit: 20, windowMs: 60 * 60 * 1000 },
   loop_run: { limit: 20, windowMs: 60 * 60 * 1000 },
   integration_request: { limit: 20, windowMs: 60 * 60 * 1000 },

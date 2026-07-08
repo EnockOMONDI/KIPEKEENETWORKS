@@ -1,68 +1,114 @@
 import { prisma } from "../lib/db";
+import { assertHermesJobSigningConfigured, signHermesJob } from "../lib/hermes-job-signing";
+import { buildMemoryContextFromArtifacts } from "../lib/memory-context";
+
+function parseJsonArray(value?: string | null) {
+  if (!value) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+}
 
 async function main() {
-  const loops = await prisma.businessLoop.findMany({
-    where: { status: "ACTIVE" },
+  assertHermesJobSigningConfigured();
+
+  const workflows = await prisma.workflow.findMany({
+    where: { status: "ACTIVE", triggerType: "SCHEDULED" },
     include: {
-      company: true,
-      employee: true
+      company: { include: { runtime: true } },
+      employees: {
+        where: { enabled: true },
+        include: {
+          employee: {
+            include: {
+              skills: { where: { enabled: true }, include: { skill: true } }
+            }
+          }
+        },
+        take: 1
+      }
     }
   });
 
-  for (const loop of loops) {
+  let queued = 0;
+  for (const workflow of workflows) {
+    const employee = workflow.employees[0]?.employee;
+    const runtime = workflow.company.runtime;
+    if (!employee || !runtime) {
+      continue;
+    }
+
     const access = await prisma.artifactAccess.findMany({
-      where: { employeeId: loop.employeeId, canUseAsMemory: true },
+      where: {
+        employeeId: employee.id,
+        canUseAsMemory: true,
+        artifact: {
+          OR: [
+            { companyId: workflow.companyId },
+            { workspaceId: workflow.company.workspaceId, companyId: null }
+          ]
+        }
+      },
       include: { artifact: true }
     });
 
-    const memoryContext = access
-      .map((item) => {
-        const text = item.artifact.extractedText?.trim();
-        if (!text) {
-          return null;
-        }
-        return `Artifact: ${item.artifact.title}\n${text.slice(0, 6000)}`;
-      })
-      .filter(Boolean)
-      .join("\n\n---\n\n");
+    const memoryContext = buildMemoryContextFromArtifacts(access.map((item) => item.artifact));
+    const skillKeys = employee.skills.map((item) => item.skill.key);
+    const allowedToolsets = Array.from(new Set(employee.skills.flatMap((item) => parseJsonArray(item.skill.defaultToolsets))));
 
     const session = await prisma.session.create({
       data: {
-        companyId: loop.companyId,
-        employeeId: loop.employeeId,
-        title: `Loop: ${loop.name}`
+        workspaceId: workflow.company.workspaceId,
+        companyId: workflow.companyId,
+        employeeId: employee.id,
+        workflowId: workflow.id,
+        title: `Workflow: ${workflow.name}`
       }
     });
+    const jobData = {
+      workspaceId: workflow.company.workspaceId,
+      companyId: workflow.companyId,
+      companyRuntimeId: runtime.id,
+      employeeId: employee.id,
+      sessionId: session.id,
+      workflowId: workflow.id,
+      prompt: `Run the scheduled workflow: ${workflow.name}. Prepare the result for human approval.`,
+      employeeName: employee.displayName,
+      companyName: workflow.company.name,
+      runtimeProfile: runtime.hermesProfile,
+      skillKeys: JSON.stringify(skillKeys),
+      allowedArtifactIds: JSON.stringify(access.map((item) => item.artifactId)),
+      allowedToolsets: JSON.stringify(allowedToolsets.length ? allowedToolsets : ["chat", "documents", "memory", "audit"]),
+      memoryContext
+    };
+
     await prisma.hermesJob.create({
       data: {
-        companyId: loop.companyId,
-        employeeId: loop.employeeId,
-        sessionId: session.id,
-        prompt: `Run the scheduled business loop: ${loop.name}. Prepare the result for human approval.`,
-        employeeName: loop.employee.displayName,
-        hermesProfile: loop.employee.hermesProfile,
-        companyName: loop.company.name,
-        isolationTier: loop.company.isolationTier,
-        hermesNamespace: loop.company.hermesNamespace,
-        allowedArtifactIds: JSON.stringify(access.map((item) => item.artifactId)),
-        allowedToolsets: JSON.stringify(["chat", "documents", "memory", "audit"]),
-        memoryContext,
+        ...jobData,
+        jobSignature: signHermesJob(jobData),
         status: "PENDING"
       }
     });
 
     await prisma.auditLog.create({
       data: {
-        companyId: loop.companyId,
-        actor: "loop-runner",
-        action: "loop.queued",
-        target: loop.name,
+        workspaceId: workflow.company.workspaceId,
+        companyId: workflow.companyId,
+        actor: "workflow-runner",
+        action: "workflow.queued",
+        target: workflow.name,
         metadata: JSON.stringify({ sessionId: session.id })
       }
     });
+    queued += 1;
   }
 
-  console.log(`Queued ${loops.length} active loop(s).`);
+  console.log(`Queued ${queued} active scheduled workflow(s).`);
 }
 
 main()

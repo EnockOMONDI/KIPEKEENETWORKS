@@ -1,21 +1,25 @@
 import { AppShell, Badge, Card, PageHeader } from "@/components/AppShell";
-import { requireUser } from "@/lib/auth";
+import { requireCompanyContext } from "@/lib/auth";
+import { prisma } from "@/lib/db";
 import { isolationLabel } from "@/lib/isolation";
-import { canManageCompany, roleLabel } from "@/lib/roles";
+import { canManageCompany, isKipekeeAdmin, roleLabel } from "@/lib/roles";
 import { redirect } from "next/navigation";
 
 export default async function CompanySettingsPage() {
-  const user = await requireUser();
+  const user = await requireCompanyContext();
   if (!canManageCompany(user)) {
     redirect("/dashboard");
   }
+  const platformAdmin = isKipekeeAdmin(user);
+
+  const runtime = await prisma.companyRuntime.findUnique({ where: { companyId: user.companyId } });
 
   return (
-    <AppShell companyName={user.company.name} companySlug={user.company.slug} userEmail={user.email} userRole={user.role}>
+    <AppShell companyName={user.company.name} companySlug={user.company.slug} userEmail={user.email} platformRole={user.role} userRole={user.memberRole ?? user.role}>
       <PageHeader
         eyebrow="Workspace control"
-        title="Company settings"
-        description="Review the company workspace, isolation tier, and current access level. Editing controls will be added as the hosted setup hardens."
+        title="Organisation settings"
+        description="Review the organisation workspace, isolation tier, and current access level. Editing controls will be added as the hosted setup hardens."
       />
       <div className="grid gap-5 lg:grid-cols-2">
         <Card>
@@ -23,8 +27,9 @@ export default async function CompanySettingsPage() {
           <div className="mt-4 space-y-3 text-sm text-graphite">
             <p>Slug: {user.company.slug}</p>
             <p>Status: {user.company.status}</p>
-            <p>Namespace: {user.company.hermesNamespace ?? "Not set"}</p>
-            <p>Hermes home: {user.company.hermesHomePath ?? "Shared/default"}</p>
+            <p>Workspace: {user.workspace.name}</p>
+            {platformAdmin ? <p>Runtime profile: {runtime?.hermesProfile ?? "Not provisioned"}</p> : null}
+            {platformAdmin ? <p>Runtime mode: {runtime?.runtimeType ?? "Not provisioned"}</p> : null}
           </div>
         </Card>
         <Card>
@@ -35,7 +40,7 @@ export default async function CompanySettingsPage() {
                 Your account controls what appears in the sidebar and which actions are allowed server-side.
               </p>
             </div>
-            <Badge tone="success">{roleLabel(user.role)}</Badge>
+            <Badge tone="success">{roleLabel(user.memberRole ?? user.role)}</Badge>
           </div>
           <p className="mt-4 rounded-md bg-paper px-3 py-2 text-sm text-graphite">
             Isolation: {isolationLabel(user.company.isolationTier)}

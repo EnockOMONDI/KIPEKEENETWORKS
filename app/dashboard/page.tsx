@@ -1,43 +1,58 @@
 import Link from "next/link";
 import { AppShell, Badge, Card, PageHeader } from "@/components/AppShell";
-import { requireUser } from "@/lib/auth";
+import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { isolationLabel } from "@/lib/isolation";
-import { roleLabel } from "@/lib/roles";
+import { isKipekeeAdmin, roleLabel } from "@/lib/roles";
 
 export default async function DashboardPage() {
-  const user = await requireUser();
-  const [employees, artifacts, loops, approvals, conversations, recentEmployees] = await Promise.all([
+  const user = await requireCompanyContext();
+  const platformAdmin = isKipekeeAdmin(user);
+  const [employees, artifacts, workflows, approvals, conversations, companies, recentEmployees, runtime] = await Promise.all([
     prisma.companyEmployee.count({ where: { companyId: user.companyId } }),
-    prisma.artifact.count({ where: { companyId: user.companyId } }),
-    prisma.businessLoop.count({ where: { companyId: user.companyId } }),
+    prisma.artifact.count({ where: { OR: [{ companyId: user.companyId }, { workspaceId: user.workspaceId, companyId: null }] } }),
+    prisma.workflow.count({ where: { companyId: user.companyId } }),
     prisma.approvalRequest.count({ where: { companyId: user.companyId, status: "PENDING" } }),
     prisma.session.count({ where: { companyId: user.companyId } }),
+    prisma.company.findMany({
+      where: { workspaceId: user.workspaceId },
+      orderBy: { createdAt: "asc" },
+      select: { id: true }
+    }),
     prisma.companyEmployee.findMany({
       where: { companyId: user.companyId },
-      include: {
+      select: {
+        id: true,
+        displayName: true,
         sessions: {
           orderBy: { createdAt: "desc" },
+          select: { id: true },
           take: 3
-        }
+        },
+        skills: { select: { id: true } }
       },
       orderBy: { createdAt: "asc" },
       take: 6
+    }),
+    prisma.companyRuntime.findUnique({
+      where: { companyId: user.companyId },
+      select: { hermesProfile: true, status: true }
     })
   ]);
 
   return (
-    <AppShell companyName={user.company.name} companySlug={user.company.slug} userEmail={user.email} userRole={user.role}>
+    <AppShell companyName={user.company.name} companySlug={user.company.slug} userEmail={user.email} platformRole={user.role} userRole={user.memberRole || user.role}>
       <PageHeader
         eyebrow="Home"
         title={`Welcome back, ${user.name}`}
-        description={`${user.company.name} has an AI workforce trained on approved company knowledge.`}
+        description={`${user.workspace.name} contains ${companies.length} organisation${companies.length === 1 ? "" : "s"}. ${user.company.name} is currently selected.`}
       />
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-5">
+        <Metric label="Organisations" value={companies.length} />
         <Metric label="AI employees" value={employees} />
         <Metric label="Knowledge files" value={artifacts} />
-        <Metric label="Conversations" value={conversations} />
-        <Metric label="Awaiting approval" value={approvals} />
+        <Metric label="Work instructions" value={workflows} />
+        <Metric label="Approvals" value={approvals} />
       </div>
       <div className="mt-6 grid gap-5 lg:grid-cols-[1fr_360px]">
         <Card>
@@ -55,7 +70,7 @@ export default async function DashboardPage() {
                   <div>
                     <p className="font-semibold">{employee.displayName}</p>
                     <p className="mt-1 text-sm text-graphite">
-                      {employee.sessions.length ? `Answered ${employee.sessions.length} recent chats` : "Ready for work"}
+                      {employee.skills.length} skill{employee.skills.length === 1 ? "" : "s"} assigned · {employee.sessions.length ? `${employee.sessions.length} recent chats` : "ready"}
                     </p>
                   </div>
                 </div>
@@ -69,10 +84,13 @@ export default async function DashboardPage() {
         <Card>
           <h2 className="text-xl font-semibold">Workspace profile</h2>
           <div className="mt-4 space-y-3 text-sm text-graphite">
-            <p>Role: {roleLabel(user.role)}</p>
+            <p>Workspace: {user.workspace.name}</p>
+            <p>Organisation: {user.company.name}</p>
+            <p>Role: {roleLabel(user.memberRole || user.role)}</p>
             <p>Isolation: {isolationLabel(user.company.isolationTier)}</p>
-            <p>Namespace: {user.company.hermesNamespace ?? user.company.slug}</p>
-            <p>Scheduled activity: {loops}</p>
+            <p>AI setup: <span className="font-semibold text-ink">{runtime?.status === "ACTIVE" || runtime?.status === "READY" ? "Ready" : "Pending"}</span></p>
+            {platformAdmin ? <p>Runtime profile: {runtime?.hermesProfile ?? user.company.hermesNamespace ?? user.company.slug}</p> : null}
+            <p>Conversations: {conversations}</p>
           </div>
         </Card>
       </div>

@@ -1,12 +1,12 @@
 import { AppShell, Badge, Card, EmptyState, PageHeader } from "@/components/AppShell";
 import { SubmitButton } from "@/components/Interactive";
 import { createApprovalAction, decideApprovalAction } from "@/lib/actions";
-import { requireUser } from "@/lib/auth";
+import { requireCompanyContext } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { canManageCompany } from "@/lib/roles";
 
 export default async function ApprovalsPage() {
-  const user = await requireUser();
+  const user = await requireCompanyContext();
   const manager = canManageCompany(user);
   const approvals = await prisma.approvalRequest.findMany({
     where: { companyId: user.companyId },
@@ -14,7 +14,7 @@ export default async function ApprovalsPage() {
   });
 
   return (
-    <AppShell companyName={user.company.name} companySlug={user.company.slug} userEmail={user.email} userRole={user.role}>
+    <AppShell companyName={user.company.name} companySlug={user.company.slug} userEmail={user.email} platformRole={user.role} userRole={user.memberRole ?? user.role}>
       <PageHeader
         eyebrow="Human control"
         title="Approval inbox"

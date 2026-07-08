@@ -4,65 +4,138 @@ generator client {
 
 datasource db {
   provider  = "postgresql"
-  url      = env("DATABASE_URL")
+  url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
 
-model Company {
-  id          String   @id @default(cuid())
-  name        String
-  slug        String   @unique
-  status      String   @default("TRIAL")
-  isolationTier String @default("SHARED")
-  hermesNamespace String?
-  hermesHomePath String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+model User {
+  id                String            @id @default(cuid())
+  name              String
+  email             String            @unique
+  passwordHash      String?
+  role              String            @default("MEMBER")
+  createdAt         DateTime          @default(now())
+  uploadedArtifacts Artifact[]
+  authSessions      AuthSession[]
+  ownedWorkspaces   Workspace[]       @relation("WorkspaceOwner")
+  memberships       WorkspaceMember[]
 
-  users       User[]
-  invites     TeamInvite[]
-  employees   CompanyEmployee[]
-  artifacts   Artifact[]
-  sessions    Session[]
-  hermesJobs  HermesJob[]
-  loops       BusinessLoop[]
-  audits      AuditLog[]
-  approvals   ApprovalRequest[]
-  invoices    Invoice[]
-  integrations IntegrationConnection[]
-  subscription Subscription?
+  @@index([role])
 }
 
-model User {
-  id        String   @id @default(cuid())
-  companyId String
-  name      String
-  email     String
-  passwordHash String?
-  role      String   @default("MEMBER")
-  createdAt DateTime @default(now())
+model Workspace {
+  id           String                  @id @default(cuid())
+  name         String
+  slug         String                  @unique
+  type         String                  @default("BUSINESS_GROUP")
+  status       String                  @default("ACTIVE")
+  ownerUserId  String?
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+  approvals    ApprovalRequest[]
+  artifacts    Artifact[]
+  audits       AuditLog[]
+  companies    Company[]
+  integrations IntegrationConnection[]
+  collections  KnowledgeCollection[]
+  invites      TeamInvite[]
+  owner        User?                   @relation("WorkspaceOwner", fields: [ownerUserId], references: [id])
+  members      WorkspaceMember[]
 
-  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  authSessions AuthSession[]
+  @@index([ownerUserId])
+}
 
-  @@unique([companyId, email])
+model WorkspaceMember {
+  id          String    @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        String    @default("MEMBER")
+  active      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([userId, active])
+}
+
+model Company {
+  id              String                  @id @default(cuid())
+  workspaceId     String
+  name            String
+  slug            String                  @unique
+  type            String                  @default("COMPANY")
+  industryKey     String?
+  countryCode     String?
+  status          String                  @default("TRIAL")
+  isolationTier   String                  @default("PROFILE")
+  hermesNamespace String?
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+  approvals       ApprovalRequest[]
+  artifacts       Artifact[]
+  audits          AuditLog[]
+  brandVoice      BrandVoice?
+  businessRules   BusinessRule[]
+  workspace       Workspace               @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  employees       CompanyEmployee[]
+  runtime         CompanyRuntime?
+  hermesJobs      HermesJob[]
+  integrations    IntegrationConnection[]
+  invoices        Invoice[]
+  collections     KnowledgeCollection[]
+  mailboxes       Mailbox[]
+  sessions        Session[]
+  subscription    Subscription?
+  invites         TeamInvite[]
+  workflows       Workflow[]
+
+  @@index([workspaceId])
+  @@index([type])
+  @@index([industryKey])
+}
+
+model CompanyRuntime {
+  id             String      @id @default(cuid())
+  workspaceId    String
+  companyId      String      @unique
+  runtimeType    String      @default("PROFILE")
+  hermesProfile  String      @unique
+  hermesHomePath String?
+  status         String      @default("PENDING")
+  provisionedAt  DateTime?
+  configVersion  Int         @default(1)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  company        Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  hermesJobs     HermesJob[]
+
+  @@index([workspaceId, status])
 }
 
 model TeamInvite {
-  id        String   @id @default(cuid())
-  companyId String
-  name      String
-  email     String
-  role      String
-  tokenHash String   @unique
-  invitedBy String
-  expiresAt DateTime
-  acceptedAt DateTime?
-  createdAt DateTime @default(now())
+  id           String    @id @default(cuid())
+  workspaceId  String
+  companyId    String?
+  name         String
+  email        String
+  role         String
+  tokenHash    String    @unique
+  invitedBy    String
+  expiresAt    DateTime
+  acceptedAt   DateTime?
+  revokedAt    DateTime?
+  revokedBy    String?
+  openedAt     DateTime?
+  lastOpenedAt DateTime?
+  openCount    Int       @default(0)
+  maxOpenCount Int       @default(10)
+  createdAt    DateTime  @default(now())
+  company      Company?  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
-  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
-  @@index([companyId, email])
+  @@index([workspaceId, email])
+  @@index([companyId])
 }
 
 model AuthSession {
@@ -71,109 +144,360 @@ model AuthSession {
   tokenHash String   @unique
   expiresAt DateTime
   createdAt DateTime @default(now())
-
-  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model OnboardingPackage {
-  id                String   @id @default(cuid())
-  name              String   @unique
+  id                String         @id @default(cuid())
+  name              String         @unique
   priceKes          Int?
   description       String
   includedEmployees Int?
-  loopsEnabled      Boolean  @default(false)
-  documentMemory    Boolean  @default(true)
-  createdAt         DateTime @default(now())
-
+  loopsEnabled      Boolean        @default(false)
+  documentMemory    Boolean        @default(true)
+  createdAt         DateTime       @default(now())
   subscriptions     Subscription[]
 }
 
 model Subscription {
-  id                  String   @id @default(cuid())
-  companyId           String   @unique
+  id                  String             @id @default(cuid())
+  companyId           String             @unique
   onboardingPackageId String?
-  monthlyUserPriceKes Int      @default(4500)
-  paidUsers           Int      @default(1)
-  setupFeeKes         Int      @default(0)
-  active              Boolean  @default(true)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
-
-  company             Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  monthlyUserPriceKes Int                @default(4500)
+  paidUsers           Int                @default(1)
+  setupFeeKes         Int                @default(0)
+  active              Boolean            @default(true)
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  company             Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
   onboardingPackage   OnboardingPackage? @relation(fields: [onboardingPackageId], references: [id])
 }
 
 model EmployeeTemplate {
-  id          String   @id @default(cuid())
-  name        String   @unique
-  description String
-  defaultTools String
-  createdAt   DateTime @default(now())
-
-  employees   CompanyEmployee[]
+  id            String            @id @default(cuid())
+  name          String            @unique
+  description   String
+  defaultTools  String
+  defaultSkills String            @default("[]")
+  createdAt     DateTime          @default(now())
+  employees     CompanyEmployee[]
 }
 
 model CompanyEmployee {
-  id              String   @id @default(cuid())
-  companyId       String
-  templateId      String
-  displayName     String
-  hermesProfile   String?
-  active          Boolean  @default(true)
-  createdAt       DateTime @default(now())
+  id               String             @id @default(cuid())
+  companyId        String
+  templateId       String
+  displayName      String
+  roleInstructions String?
+  active           Boolean            @default(true)
+  createdAt        DateTime           @default(now())
+  artifactAccess   ArtifactAccess[]
+  company          Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  template         EmployeeTemplate   @relation(fields: [templateId], references: [id])
+  skills           EmployeeSkill[]
+  workflows        EmployeeWorkflow[]
+  hermesJobs       HermesJob[]
+  mailboxAccess    MailboxAccess[]
+  sessions         Session[]
 
-  company         Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  template        EmployeeTemplate @relation(fields: [templateId], references: [id])
-  artifactAccess  ArtifactAccess[]
-  sessions        Session[]
-  loops           BusinessLoop[]
-  hermesJobs      HermesJob[]
+  @@index([companyId, active])
+}
+
+model Skill {
+  id              String                  @id @default(cuid())
+  key             String                  @unique
+  name            String
+  description     String
+  category        String
+  defaultToolsets String                  @default("[]")
+  skillPath       String?
+  version         Int                     @default(1)
+  enabled         Boolean                 @default(true)
+  createdAt       DateTime                @default(now())
+  employees       EmployeeSkill[]
+  industrySkills  IndustryTemplateSkill[]
+  workflowSteps   WorkflowStep[]
+  templateSteps   WorkflowTemplateStep[]
+
+  @@index([category, enabled])
+}
+
+model EmployeeSkill {
+  id         String          @id @default(cuid())
+  employeeId String
+  skillId    String
+  enabled    Boolean         @default(true)
+  createdAt  DateTime        @default(now())
+  employee   CompanyEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  skill      Skill           @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, skillId])
+  @@index([skillId])
+}
+
+model Workflow {
+  id                String              @id @default(cuid())
+  companyId         String
+  name              String
+  description       String
+  status            String              @default("DRAFT")
+  triggerType       String              @default("MANUAL")
+  schedule          String?
+  approvalPolicy    String              @default("APPROVAL_REQUIRED")
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  approvals         ApprovalRequest[]
+  rules             BusinessRule[]
+  employees         EmployeeWorkflow[]
+  jobs              HermesJob[]
+  integrationAccess IntegrationAccess[]
+  sessions          Session[]
+  company           Company             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  steps             WorkflowStep[]
+
+  @@index([companyId, status])
+}
+
+model WorkflowTemplate {
+  id                  String                     @id @default(cuid())
+  key                 String                     @unique
+  name                String
+  description         String
+  category            String
+  defaultEmployeeName String
+  triggerType         String                     @default("MANUAL")
+  schedule            String?
+  approvalPolicy      String                     @default("APPROVAL_REQUIRED")
+  active              Boolean                    @default(true)
+  version             Int                        @default(1)
+  createdAt           DateTime                   @default(now())
+  updatedAt           DateTime                   @updatedAt
+  industries          IndustryTemplateWorkflow[]
+  steps               WorkflowTemplateStep[]
+
+  @@index([category, active])
+}
+
+model WorkflowTemplateStep {
+  id                 String           @id @default(cuid())
+  workflowTemplateId String
+  skillId            String?
+  stepOrder          Int
+  stepType           String           @default("SKILL")
+  instruction        String
+  inputMapping       String?
+  outputMapping      String?
+  requiresApproval   Boolean          @default(false)
+  skill              Skill?           @relation(fields: [skillId], references: [id])
+  workflowTemplate   WorkflowTemplate @relation(fields: [workflowTemplateId], references: [id], onDelete: Cascade)
+
+  @@unique([workflowTemplateId, stepOrder])
+  @@index([skillId])
+}
+
+model IndustryTemplate {
+  id                   String                     @id @default(cuid())
+  key                  String                     @unique
+  name                 String
+  description          String
+  organisationTypes    String                     @default("[]")
+  countryCode          String?
+  brandVoiceTone       String                     @default("Clear, warm, professional")
+  brandVoiceRules      String                     @default("")
+  businessRules        String                     @default("[]")
+  knowledgeCollections String                     @default("[]")
+  recommendedEmployees String                     @default("[]")
+  active               Boolean                    @default(true)
+  createdAt            DateTime                   @default(now())
+  updatedAt            DateTime                   @updatedAt
+  skills               IndustryTemplateSkill[]
+  workflows            IndustryTemplateWorkflow[]
+
+  @@index([active])
+}
+
+model IndustryTemplateSkill {
+  id                 String           @id @default(cuid())
+  industryTemplateId String
+  skillId            String
+  recommended        Boolean          @default(true)
+  createdAt          DateTime         @default(now())
+  industryTemplate   IndustryTemplate @relation(fields: [industryTemplateId], references: [id], onDelete: Cascade)
+  skill              Skill            @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@unique([industryTemplateId, skillId])
+  @@index([skillId])
+}
+
+model IndustryTemplateWorkflow {
+  id                 String           @id @default(cuid())
+  industryTemplateId String
+  workflowTemplateId String
+  recommended        Boolean          @default(true)
+  createdAt          DateTime         @default(now())
+  industryTemplate   IndustryTemplate @relation(fields: [industryTemplateId], references: [id], onDelete: Cascade)
+  workflowTemplate   WorkflowTemplate @relation(fields: [workflowTemplateId], references: [id], onDelete: Cascade)
+
+  @@unique([industryTemplateId, workflowTemplateId])
+  @@index([workflowTemplateId])
+}
+
+model WorkflowStep {
+  id               String   @id @default(cuid())
+  workflowId       String
+  skillId          String?
+  stepOrder        Int
+  stepType         String   @default("SKILL")
+  instruction      String
+  inputMapping     String?
+  outputMapping    String?
+  requiresApproval Boolean  @default(false)
+  skill            Skill?   @relation(fields: [skillId], references: [id])
+  workflow         Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@unique([workflowId, stepOrder])
+  @@index([skillId])
+}
+
+model EmployeeWorkflow {
+  id         String          @id @default(cuid())
+  employeeId String
+  workflowId String
+  enabled    Boolean         @default(true)
+  createdAt  DateTime        @default(now())
+  employee   CompanyEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  workflow   Workflow        @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, workflowId])
+  @@index([workflowId])
+}
+
+model BrandVoice {
+  id                    String   @id @default(cuid())
+  companyId             String   @unique
+  tone                  String   @default("Clear, warm, professional")
+  styleRules            String   @default("")
+  forbiddenWords        String   @default("")
+  formattingPreferences String   @default("")
+  version               Int      @default(1)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  company               Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+}
+
+model BusinessRule {
+  id         String    @id @default(cuid())
+  companyId  String
+  workflowId String?
+  name       String
+  category   String
+  ruleText   String
+  severity   String    @default("NORMAL")
+  version    Int       @default(1)
+  active     Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  company    Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  workflow   Workflow? @relation(fields: [workflowId], references: [id])
+
+  @@index([companyId, active])
+  @@index([workflowId])
+}
+
+model KnowledgeCollection {
+  id          String           @id @default(cuid())
+  workspaceId String?
+  companyId   String?
+  ownerType   String
+  ownerId     String
+  name        String
+  category    String
+  sensitivity String           @default("NORMAL")
+  createdAt   DateTime         @default(now())
+  artifacts   Artifact[]
+  chunks      KnowledgeChunk[]
+  company     Company?         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  workspace   Workspace?       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([ownerType, ownerId])
+  @@index([workspaceId])
+  @@index([companyId])
 }
 
 model Artifact {
-  id            String   @id @default(cuid())
-  companyId     String
-  uploadedBy    String?
-  title         String
-  kind          String
-  storagePath   String
-  extractedText String?
-  memoryStatus  String   @default("ARTIFACT_ONLY")
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id               String               @id @default(cuid())
+  workspaceId      String?
+  companyId        String?
+  collectionId     String?
+  uploadedByUserId String?
+  title            String
+  kind             String
+  storagePath      String
+  storageProvider  String               @default("local")
+  fileSizeBytes    Int                  @default(0)
+  extractedText    String?
+  memoryStatus     String               @default("ARTIFACT_ONLY")
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  collection       KnowledgeCollection? @relation(fields: [collectionId], references: [id])
+  company          Company?             @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  uploadedBy       User?                @relation(fields: [uploadedByUserId], references: [id])
+  workspace        Workspace?           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  access           ArtifactAccess[]
+  chunks           KnowledgeChunk[]
 
-  company       Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  access        ArtifactAccess[]
+  @@index([workspaceId])
+  @@index([companyId])
+  @@index([collectionId])
+}
+
+model KnowledgeChunk {
+  id           String              @id @default(cuid())
+  artifactId   String
+  collectionId String
+  text         String
+  chunkIndex   Int
+  metadata     String?
+  createdAt    DateTime            @default(now())
+  artifact     Artifact            @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+  collection   KnowledgeCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  @@unique([artifactId, chunkIndex])
+  @@index([collectionId])
 }
 
 model ArtifactAccess {
-  id         String   @id @default(cuid())
-  artifactId String
-  employeeId String
-  canUseAsMemory Boolean @default(false)
-  createdAt  DateTime @default(now())
-
-  artifact   Artifact @relation(fields: [artifactId], references: [id], onDelete: Cascade)
-  employee   CompanyEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  id             String          @id @default(cuid())
+  artifactId     String
+  employeeId     String
+  canUseAsMemory Boolean         @default(false)
+  createdAt      DateTime        @default(now())
+  artifact       Artifact        @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+  employee       CompanyEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@unique([artifactId, employeeId])
+  @@index([employeeId, canUseAsMemory])
 }
 
 model Session {
-  id         String   @id @default(cuid())
-  companyId  String
-  employeeId String
-  title      String
-  pinned     Boolean  @default(false)
-  archived   Boolean  @default(false)
-  summary    String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id          String          @id @default(cuid())
+  workspaceId String
+  companyId   String
+  employeeId  String
+  workflowId  String?
+  title       String
+  pinned      Boolean         @default(false)
+  archived    Boolean         @default(false)
+  summary     String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  hermesJobs  HermesJob[]
+  messages    Message[]
+  company     Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employee    CompanyEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  workflow    Workflow?       @relation(fields: [workflowId], references: [id])
 
-  company    Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  employee   CompanyEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  messages   Message[]
-  hermesJobs HermesJob[]
+  @@index([workspaceId, companyId])
+  @@index([employeeId])
 }
 
 model Message {
@@ -182,77 +506,94 @@ model Message {
   role      String
   content   String
   createdAt DateTime @default(now())
-
-  session   Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 }
 
 model HermesJob {
-  id                 String   @id @default(cuid())
+  id                 String          @id @default(cuid())
+  workspaceId        String
   companyId          String
+  companyRuntimeId   String
   employeeId         String
   sessionId          String
+  workflowId         String?
   prompt             String
   employeeName       String
-  hermesProfile      String?
   companyName        String
-  isolationTier      String
-  hermesNamespace    String?
-  allowedArtifactIds String   @default("[]")
-  allowedToolsets    String   @default("[]")
+  runtimeProfile     String
+  skillKeys          String          @default("[]")
+  allowedArtifactIds String          @default("[]")
+  allowedToolsets    String          @default("[]")
   memoryContext      String?
-  status             String   @default("PENDING")
+  jobSignature       String?
+  status             String          @default("PENDING")
   result             String?
   error              String?
   lockedAt           DateTime?
   lockedBy           String?
-  attempts           Int      @default(0)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  attempts           Int             @default(0)
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
   completedAt        DateTime?
-
-  company            Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company            Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  runtime            CompanyRuntime  @relation(fields: [companyRuntimeId], references: [id], onDelete: Cascade)
   employee           CompanyEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  session            Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  session            Session         @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  workflow           Workflow?       @relation(fields: [workflowId], references: [id])
+
+  @@index([workspaceId, status, createdAt])
+  @@index([companyRuntimeId])
 }
 
-model BusinessLoop {
-  id          String   @id @default(cuid())
-  companyId   String
-  employeeId  String
-  name        String
-  schedule    String
-  status      String   @default("DRAFT")
-  requiresApproval Boolean @default(true)
-  outputTarget String
-  createdAt   DateTime @default(now())
+model WorkerHeartbeat {
+  id           String   @id @default(cuid())
+  workerId     String   @unique
+  runtime      String   @default("local")
+  status       String   @default("ONLINE")
+  currentJobId String?
+  lastSeenAt   DateTime @default(now())
+  metadata     String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  company     Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  employee    CompanyEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  @@index([status, lastSeenAt])
 }
 
 model AuditLog {
-  id        String   @id @default(cuid())
-  companyId String
-  actor     String
-  action    String
-  target    String
-  metadata  String?
-  createdAt DateTime @default(now())
+  id          String     @id @default(cuid())
+  workspaceId String?
+  companyId   String?
+  actor       String
+  action      String
+  target      String
+  metadata    String?
+  createdAt   DateTime   @default(now())
+  company     Company?   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
-  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  @@index([workspaceId])
+  @@index([companyId])
 }
 
 model ApprovalRequest {
-  id          String   @id @default(cuid())
-  companyId   String
-  title       String
-  details     String
-  status      String   @default("PENDING")
-  requestedBy String
-  createdAt   DateTime @default(now())
-  decidedAt   DateTime?
+  id           String      @id @default(cuid())
+  workspaceId  String
+  companyId    String
+  workflowId   String?
+  emailDraftId String?
+  title        String
+  details      String
+  status       String      @default("PENDING")
+  requestedBy  String
+  createdAt    DateTime    @default(now())
+  decidedAt    DateTime?
+  company      Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  emailDraft   EmailDraft? @relation(fields: [emailDraftId], references: [id])
+  workflow     Workflow?   @relation(fields: [workflowId], references: [id])
+  workspace    Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
-  company     Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  @@index([workspaceId, status])
+  @@index([companyId, status])
 }
 
 model Invoice {
@@ -263,22 +604,129 @@ model Invoice {
   amountKes   Int
   status      String   @default("DRAFT")
   createdAt   DateTime @default(now())
-
-  company     Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company     Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 }
 
 model IntegrationConnection {
-  id          String   @id @default(cuid())
-  companyId   String
-  provider    String
-  displayName String
-  status      String   @default("PLANNED")
-  scopes      String
-  connectedBy String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                   String              @id @default(cuid())
+  ownerType            String
+  ownerId              String
+  userId               String?
+  workspaceId          String?
+  companyId            String?
+  provider             String
+  accountEmail         String?
+  displayName          String
+  status               String              @default("PLANNED")
+  encryptedCredentials String?
+  scopes               String
+  connectedBy          String?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  access               IntegrationAccess[]
+  company              Company?            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  workspace            Workspace?          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  mailboxes            Mailbox[]
 
-  company     Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  @@index([ownerType, ownerId])
+  @@index([workspaceId])
+  @@index([companyId])
+}
 
-  @@unique([companyId, provider])
+model IntegrationAccess {
+  id           String                @id @default(cuid())
+  connectionId String
+  companyId    String?
+  employeeId   String?
+  workflowId   String?
+  permission   String                @default("READ")
+  createdAt    DateTime              @default(now())
+  connection   IntegrationConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  workflow     Workflow?             @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@index([connectionId])
+  @@index([companyId])
+  @@index([employeeId])
+}
+
+model Mailbox {
+  id                      String                @id @default(cuid())
+  companyId               String
+  integrationConnectionId String
+  emailAddress            String
+  displayName             String
+  provider                String
+  status                  String                @default("PLANNED")
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
+  messages                EmailMessage[]
+  company                 Company               @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  integrationConnection   IntegrationConnection @relation(fields: [integrationConnectionId], references: [id], onDelete: Cascade)
+  access                  MailboxAccess[]
+
+  @@unique([companyId, emailAddress])
+  @@index([integrationConnectionId])
+}
+
+model MailboxAccess {
+  id                     String          @id @default(cuid())
+  mailboxId              String
+  employeeId             String
+  canRead                Boolean         @default(true)
+  canDraft               Boolean         @default(true)
+  canRequestSend         Boolean         @default(true)
+  canSendWithoutApproval Boolean         @default(false)
+  createdAt              DateTime        @default(now())
+  employee               CompanyEmployee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  mailbox                Mailbox         @relation(fields: [mailboxId], references: [id], onDelete: Cascade)
+
+  @@unique([mailboxId, employeeId])
+  @@index([employeeId])
+}
+
+model EmailMessage {
+  id                String       @id @default(cuid())
+  mailboxId         String
+  externalMessageId String
+  fromAddress       String
+  toAddresses       String
+  ccAddresses       String?
+  subject           String
+  bodySnippet       String?
+  receivedAt        DateTime
+  status            String       @default("NEW")
+  createdAt         DateTime     @default(now())
+  drafts            EmailDraft[]
+  mailbox           Mailbox      @relation(fields: [mailboxId], references: [id], onDelete: Cascade)
+
+  @@unique([mailboxId, externalMessageId])
+  @@index([mailboxId, receivedAt])
+}
+
+model EmailDraft {
+  id           String            @id @default(cuid())
+  messageId    String
+  employeeId   String
+  draftSubject String
+  draftBody    String
+  status       String            @default("DRAFT")
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  approvals    ApprovalRequest[]
+  message      EmailMessage      @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId, status])
+}
+
+model RateLimitBucket {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  action    String
+  subject   String
+  count     Int      @default(0)
+  resetAt   DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([action, resetAt])
 }

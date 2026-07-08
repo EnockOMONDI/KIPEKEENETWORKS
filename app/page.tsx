@@ -1,295 +1,168 @@
-import {
-  Activity,
-  BriefcaseBusiness,
-  CheckCircle2,
-  Clock3,
-  FileText,
-  LockKeyhole,
-  Network,
-  ShieldCheck,
-  Users
-} from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
-import { onboardingPackages } from "@/lib/seed-data";
+import { ArrowUpRight, ChevronDown, Network, Star } from "lucide-react";
 
-const workforce = [
-  "CEO Assistant",
-  "Creative Director",
-  "Marketing Manager",
-  "Proposal Writer",
-  "Finance Assistant",
-  "Software Engineer",
-  "Brand Manager",
-  "Social Media Manager",
-  "Research Analyst",
-  "Customer Support",
-  "Sales Assistant"
-];
+const partners = ["Travel", "Retail", "NGO", "Finance", "Education", "Healthcare"];
 
-const loops = [
-  "Daily CEO brief",
-  "Weekly marketing plan",
-  "Proposal follow-up scan",
-  "Finance reminders",
-  "Lead research",
-  "Content calendar",
-  "Client support triage"
-];
-
-const accessOptions = [
-  "CEO Assistant",
-  "Marketing Manager",
-  "Finance Assistant",
-  "Research Assistant",
-  "Sales Assistant",
-  "Customer Support",
-  "All company AI employees",
-  "Only me"
+const avatars = [
+  "bg-[#f8d7df]",
+  "bg-[#dbeafe]",
+  "bg-[#dcfce7]",
+  "bg-[#fef3c7]"
 ];
 
 export default function Home() {
   return (
-    <main className="min-h-screen">
-      <header className="border-b border-black/10 bg-paper/90">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-5">
-          <div className="flex items-center gap-3">
-            <div className="grid h-10 w-10 place-items-center rounded-md bg-ink text-paper">
-              <Network size={22} />
-            </div>
-            <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.18em] text-copper">
-                Kipekee Studio
-              </p>
-              <h1 className="text-xl font-semibold text-ink">Kipekee Networks</h1>
-            </div>
-          </div>
-          <div className="hidden items-center gap-3 text-sm text-graphite md:flex">
-            <span className="rounded-md border border-black/10 bg-white px-3 py-2">
-              Hermes hidden orchestration
+    <main className="min-h-screen overflow-hidden bg-white px-4 py-8 text-[#303033] sm:px-6 lg:px-10">
+      <section className="mx-auto max-w-6xl bg-white px-5 py-5 sm:px-10 lg:px-14">
+        <header className="flex min-h-14 items-center justify-between gap-4">
+          <Link className="flex items-center gap-3 text-2xl font-black tracking-[-0.02em]" href="/">
+            <span className="grid h-9 w-9 place-items-center rounded-full bg-[#7c3aed] text-white">
+              <Network size={19} />
             </span>
-            <Link className="rounded-md border border-black/10 bg-white px-3 py-2 font-semibold text-ink" href="/login">
-              Sign in
-            </Link>
-            <Link className="rounded-md bg-forest px-3 py-2 font-semibold text-white" href="/dashboard">
-              Dashboard
-            </Link>
-          </div>
-        </div>
-      </header>
+            Kipekee
+          </Link>
 
-      <section className="mx-auto grid max-w-7xl gap-8 px-6 py-10 lg:grid-cols-[1.05fr_0.95fr]">
-        <div className="flex flex-col justify-center">
-          <p className="mb-4 inline-flex w-fit items-center gap-2 rounded-md bg-skyglass px-3 py-2 text-sm font-semibold text-forest">
-            <BriefcaseBusiness size={16} />
-            AI workforce platform for African businesses
-          </p>
-          <h2 className="max-w-3xl text-5xl font-semibold leading-[1.03] text-ink">
-            Hire AI employees trained on your business.
-          </h2>
-          <p className="mt-5 max-w-2xl text-lg leading-8 text-graphite">
-            Kipekee Networks sells digital employees, not chatbots, credits, tokens,
-            prompts, or model access. Companies get private workspaces with AI employees,
-            document memory, sessions, loops, approvals, and controlled access.
-          </p>
-          <div className="mt-7 flex flex-wrap gap-3">
-            <Link className="rounded-md bg-ink px-5 py-3 text-sm font-semibold text-paper" href="/login">
-              Sign in to workspace
+          <nav className="hidden items-center gap-9 text-sm font-medium text-[#3f3f46] md:flex">
+            <Link href="/organisations">Product</Link>
+            <Link className="inline-flex items-center gap-1" href="/documents">
+              Services <ChevronDown size={14} />
             </Link>
-            <Link className="rounded-md border border-black/10 bg-white px-5 py-3 text-sm font-semibold text-ink" href="/dashboard">
-              Open dashboard
+            <Link className="inline-flex items-center gap-1" href="/knowledge">
+              Categories <ChevronDown size={14} />
             </Link>
-          </div>
-          <div className="mt-8 grid gap-3 sm:grid-cols-3">
-            <Metric label="Monthly user subscription" value="KES 4,500" />
-            <Metric label="Starter onboarding" value="KES 5,000" />
-            <Metric label="Business onboarding" value="KES 15,000" />
-          </div>
-        </div>
+            <Link href="/help">Resources</Link>
+            <Link href="/company-settings">About Us</Link>
+          </nav>
 
-        <div className="rounded-lg border border-black/10 bg-white p-5 shadow-panel">
-          <div className="mb-5 flex items-center justify-between">
+          <Link
+            className="inline-flex min-h-12 items-center justify-center rounded-full bg-[#3d3d40] px-7 text-sm font-semibold text-white"
+            href="/login"
+          >
+            Join Us
+          </Link>
+        </header>
+
+        <section className="pt-14 sm:pt-20">
+          <div className="grid gap-8 lg:grid-cols-[1fr_0.82fr] lg:items-end">
             <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-copper">
-                Workspace
+              <p className="mb-4 inline-flex rounded-full bg-[#f4efff] px-4 py-2 text-sm font-semibold text-[#7c3aed]">
+                AI workforce platform for African businesses
               </p>
-              <h3 className="text-2xl font-semibold">Kipekee Studio</h3>
+              <h1 className="max-w-4xl text-[clamp(3.1rem,8vw,5.7rem)] font-black leading-[0.92] tracking-[-0.04em] text-[#3b3b3d]">
+                Empower Your Workforce
+                <span className="block font-serif italic font-medium tracking-normal text-[#4b4b4d]">
+                  With AI Employees
+                </span>
+              </h1>
             </div>
-            <span className="rounded-md bg-forest/10 px-3 py-2 text-sm font-medium text-forest">
-              Active
-            </span>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {workforce.map((employee) => (
-              <div
-                className="flex items-center gap-3 rounded-md border border-black/10 bg-paper px-3 py-3"
-                key={employee}
-              >
-                <CheckCircle2 className="text-forest" size={18} />
-                <span className="text-sm font-medium">{employee}</span>
+
+            <div className="grid gap-5 sm:grid-cols-[72px_1fr] sm:items-center">
+              <div className="hidden h-24 w-24 items-center justify-center sm:flex" aria-hidden="true">
+                <span className="relative block h-24 w-24">
+                  {Array.from({ length: 8 }).map((_, index) => (
+                    <span
+                      className="absolute left-1/2 top-1/2 h-1.5 w-12 origin-left rounded-full bg-black"
+                      key={index}
+                      style={{ transform: `rotate(${index * 45}deg) translateX(10px)` }}
+                    />
+                  ))}
+                </span>
               </div>
-            ))}
-          </div>
-        </div>
-      </section>
 
-      <section className="mx-auto grid max-w-7xl gap-6 px-6 pb-10 lg:grid-cols-3">
-        <Panel
-          icon={<FileText size={20} />}
-          title="Artifacts and Document Memory"
-          eyebrow="Controlled knowledge"
-        >
-          <p className="text-sm leading-6 text-graphite">
-            Uploaded files are artifacts first. Users decide whether each artifact becomes
-            memory and which AI employees can access it.
-          </p>
-          <div className="mt-4 rounded-md border border-black/10 bg-paper p-4">
-            <p className="mb-3 text-sm font-semibold">Who can access this document?</p>
-            <div className="grid gap-2">
-              {accessOptions.map((option, index) => (
-                <label className="flex items-center gap-2 text-sm" key={option}>
-                  <input defaultChecked={index === 1} type="checkbox" />
-                  {option}
-                </label>
-              ))}
-            </div>
-          </div>
-        </Panel>
-
-        <Panel icon={<Clock3 size={20} />} title="Scheduled Loops" eyebrow="Not just chat">
-          <p className="text-sm leading-6 text-graphite">
-            Kipekee employees can run recurring business loops with memory scope, tool
-            limits, output targets, and approval gates.
-          </p>
-          <div className="mt-4 grid gap-2">
-            {loops.map((loop) => (
-              <div className="rounded-md bg-paper px-3 py-2 text-sm" key={loop}>
-                {loop}
-              </div>
-            ))}
-          </div>
-        </Panel>
-
-        <Panel icon={<ShieldCheck size={20} />} title="Approvals and Isolation" eyebrow="Trust layer">
-          <div className="space-y-4 text-sm leading-6 text-graphite">
-            <p>
-              Agents can draft, summarize, analyze, and prepare work. Humans approve
-              sensitive or external actions.
-            </p>
-            <div className="rounded-md border border-black/10 bg-paper p-4">
-              <p className="font-semibold text-ink">Client isolation rule</p>
-              <ul className="mt-2 space-y-2">
-                <li>Small clients: shared infrastructure, tenant-scoped requests.</li>
-                <li>Higher-risk clients: separate Hermes home/profile/container.</li>
-                <li>Enterprise: isolated deployment if paid.</li>
-              </ul>
-            </div>
-          </div>
-        </Panel>
-      </section>
-
-      <section className="mx-auto max-w-7xl px-6 pb-12">
-        <div className="rounded-lg border border-black/10 bg-white p-6 shadow-panel">
-          <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-end">
-            <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-copper">
-                Commercial model
-              </p>
-              <h3 className="mt-1 text-3xl font-semibold">Setup fee plus monthly users</h3>
-            </div>
-            <div className="rounded-md bg-ink px-4 py-3 text-sm font-medium text-paper">
-              Monthly subscription: KES 4,500 per user
-            </div>
-          </div>
-          <div className="grid gap-4 md:grid-cols-4">
-            {onboardingPackages.map((pkg) => (
-              <article className="rounded-lg border border-black/10 bg-paper p-4" key={pkg.name}>
-                <h4 className="text-lg font-semibold">{pkg.name}</h4>
-                <p className="mt-2 text-2xl font-semibold text-forest">
-                  {pkg.priceKes ? `KES ${pkg.priceKes.toLocaleString()}` : "Quoted"}
+              <div>
+                <p className="max-w-lg text-base leading-7 text-[#4b4b52]">
+                  Hire AI employees trained on your business. Scale sales, support, finance, research, proposals, and operations without the overhead of building an AI department from scratch.
                 </p>
-                <p className="mt-3 text-sm leading-6 text-graphite">{pkg.description}</p>
-              </article>
+                <div className="mt-6 flex flex-wrap items-center gap-3">
+                  <Link
+                    className="inline-flex min-h-12 items-center justify-center rounded-full bg-[#3d3d40] px-6 text-sm font-semibold text-white"
+                    href="/login"
+                  >
+                    Get Started - It&apos;s Free
+                  </Link>
+                  <Link
+                    aria-label="Open dashboard"
+                    className="grid h-12 w-12 place-items-center rounded-full bg-[#3d3d40] text-white"
+                    href="/dashboard"
+                  >
+                    <ArrowUpRight size={19} />
+                  </Link>
+                  <div className="flex items-center gap-3">
+                    <div className="flex -space-x-2">
+                      {avatars.slice(0, 3).map((color, index) => (
+                        <span className={`grid h-10 w-10 place-items-center rounded-xl border-2 border-white ${color} text-sm font-bold`} key={color}>
+                          {["L", "A", "M"][index]}
+                        </span>
+                      ))}
+                    </div>
+                    <div>
+                      <div className="flex gap-0.5 text-[#303033]">
+                        {Array.from({ length: 5 }).map((_, index) => (
+                          <Star fill="currentColor" key={index} size={15} />
+                        ))}
+                      </div>
+                      <p className="mt-1 text-sm text-[#4b4b52]">4.8/5 from pilot operators</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-14 grid gap-5 lg:grid-cols-[0.62fr_1.28fr]">
+            <Image
+              alt="African business owner using Kipekee Networks on mobile"
+              className="h-[22rem] w-full rounded-2xl object-cover"
+              height={900}
+              priority
+              src="/landing/founder-ai-workforce.png"
+              unoptimized
+              width={900}
+            />
+            <Image
+              alt="Business team collaborating with AI employees"
+              className="h-[22rem] w-full rounded-2xl object-cover"
+              height={900}
+              priority
+              src="/landing/team-ai-workforce.png"
+              unoptimized
+              width={1400}
+            />
+          </div>
+
+          <div className="mx-auto mt-12 grid max-w-5xl grid-cols-2 gap-6 text-center text-2xl font-black text-[#4b4b4d] opacity-80 sm:grid-cols-3 lg:grid-cols-6">
+            {partners.map((partner) => (
+              <span key={partner}>{partner}</span>
             ))}
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section className="mx-auto max-w-7xl px-6 pb-16">
-        <div className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
-          <div className="rounded-lg border border-black/10 bg-ink p-6 text-paper">
-            <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-md bg-white/10">
-              <LockKeyhole size={22} />
-            </div>
-            <h3 className="text-2xl font-semibold">Hermes stays invisible.</h3>
-            <p className="mt-4 text-sm leading-7 text-white/75">
-              Kipekee owns customers, billing, users, company data, approvals, and the
-              portal. Hermes handles hidden orchestration: profiles, skills, tools, model
-              routing, memory, loops, and execution.
-            </p>
-          </div>
+        <section className="grid gap-8 py-16 lg:grid-cols-[1.15fr_0.85fr] lg:items-end">
+          <h2 className="max-w-4xl text-[clamp(2.3rem,5vw,4.1rem)] font-medium leading-tight tracking-[-0.035em] text-[#3b3b3d]">
+            Moving beyond simple automation to create a world where your digital workforce
+            <span className="font-serif italic tracking-normal"> anticipates the work before it slows you down.</span>
+          </h2>
 
-          <div className="rounded-lg border border-black/10 bg-white p-6 shadow-panel">
-            <p className="text-sm font-semibold uppercase tracking-[0.16em] text-copper">
-              Phase 1 status
-            </p>
-            <div className="mt-5 grid gap-3 md:grid-cols-2">
-              <Status icon={<Users size={18} />} text="Kipekee Studio workspace seeded" />
-              <Status icon={<BriefcaseBusiness size={18} />} text="AI employee catalog defined" />
-              <Status icon={<FileText size={18} />} text="Artifact and memory model designed" />
-              <Status icon={<Clock3 size={18} />} text="Loop model prepared" />
-              <Status icon={<ShieldCheck size={18} />} text="Approval-first policy included" />
-              <Status icon={<Activity size={18} />} text="Audit log foundation included" />
+          <div className="grid gap-6">
+            <div className="flex items-center gap-4">
+              <div className="flex -space-x-3">
+                {avatars.map((color, index) => (
+                  <span className={`grid h-14 w-14 place-items-center rounded-full border-4 border-white ${color} font-bold`} key={color}>
+                    {["C", "P", "F", "R"][index]}
+                  </span>
+                ))}
+                <span className="grid h-16 w-16 place-items-center rounded-full border-4 border-white bg-[#262626] text-2xl font-black text-white">
+                  4k
+                </span>
+              </div>
             </div>
+            <blockquote className="max-w-md text-2xl leading-snug tracking-[-0.02em] text-[#3f3f46]">
+              Reclaimed 15 hours of my week. I&apos;m never going back to managing business work manually.
+            </blockquote>
           </div>
-        </div>
+        </section>
       </section>
     </main>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-black/10 bg-white p-4 shadow-panel">
-      <p className="text-2xl font-semibold text-ink">{value}</p>
-      <p className="mt-2 text-sm text-graphite">{label}</p>
-    </div>
-  );
-}
-
-function Panel({
-  children,
-  eyebrow,
-  icon,
-  title
-}: {
-  children: React.ReactNode;
-  eyebrow: string;
-  icon: React.ReactNode;
-  title: string;
-}) {
-  return (
-    <article className="rounded-lg border border-black/10 bg-white p-5 shadow-panel">
-      <div className="mb-4 flex items-start gap-3">
-        <div className="grid h-10 w-10 place-items-center rounded-md bg-skyglass text-forest">
-          {icon}
-        </div>
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-copper">
-            {eyebrow}
-          </p>
-          <h3 className="mt-1 text-xl font-semibold">{title}</h3>
-        </div>
-      </div>
-      {children}
-    </article>
-  );
-}
-
-function Status({ icon, text }: { icon: React.ReactNode; text: string }) {
-  return (
-    <div className="flex items-center gap-3 rounded-md border border-black/10 bg-paper px-3 py-3">
-      <span className="text-forest">{icon}</span>
-      <span className="text-sm font-medium">{text}</span>
-    </div>
   );
 }

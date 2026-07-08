@@ -1,39 +1,48 @@
-import { AppShell, Badge, Card, EmptyState, PageHeader } from "@/components/AppShell";
+import { AppShell, Badge, Card, EmptyState, Notice, PageHeader } from "@/components/AppShell";
 import { SubmitButton } from "@/components/Interactive";
 import { createCompanyAction } from "@/lib/actions";
 import { inviteUrl as buildInviteUrl } from "@/lib/app-url";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { getInviteFlash } from "@/lib/invite-flash";
 import { isolationLabel, isolationTiers } from "@/lib/isolation";
+import { pageNotice } from "@/lib/page-notices";
+import { requestOrigin } from "@/lib/request-security";
 import { isKipekeeAdmin } from "@/lib/roles";
+import { organisationTypes } from "@/lib/seed-data";
 import { redirect } from "next/navigation";
 
 export default async function OnboardingPage({
   searchParams
 }: {
-  searchParams: Promise<{ invite?: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
   const user = await requireUser();
   const params = await searchParams;
+  const notice = pageNotice("onboarding", params.error);
+  const origin = await requestOrigin();
+  const inviteToken = await getInviteFlash("onboarding");
   if (!isKipekeeAdmin(user)) {
     redirect("/dashboard");
   }
-  const [packages, companies] = await Promise.all([
+  const [packages, companies, industries] = await Promise.all([
     prisma.onboardingPackage.findMany({ orderBy: { priceKes: "asc" } }),
-    prisma.company.findMany({ orderBy: { createdAt: "desc" }, take: 20 })
+    prisma.company.findMany({ orderBy: { createdAt: "desc" }, take: 20 }),
+    prisma.industryTemplate.findMany({ where: { active: true }, orderBy: { name: "asc" } })
   ]);
-  const inviteUrl = params.invite ? buildInviteUrl(params.invite) : null;
+  const inviteUrl = inviteToken ? buildInviteUrl(inviteToken, origin) : null;
 
   return (
-    <AppShell companyName={user.company.name} companySlug={user.company.slug} userEmail={user.email} userRole={user.role}>
+    <AppShell companyName={user.company?.name ?? "Kipekee Studio"} companySlug={user.company?.slug ?? "kipekee-studio"} userEmail={user.email} platformRole={user.role} userRole={user.memberRole ?? user.role}>
       <PageHeader
         eyebrow="Growth"
         title="Client onboarding"
-        description="Create company workspaces, choose a package, then configure AI employees, documents, memory, and loops."
+        description="Create organisation workspaces, choose a package, then install employees, skills, company work instruction templates, knowledge collections, and a runtime."
       />
+      {notice ? <Notice description={notice.description} title={notice.title} tone={notice.tone} /> : null}
       <div className="grid gap-5 lg:grid-cols-[380px_1fr]">
         <Card>
-          <h2 className="text-lg font-semibold">New company</h2>
+          <h2 className="text-lg font-semibold">New organisation</h2>
           {inviteUrl ? (
             <div className="mt-4 rounded-md border border-forest/20 bg-forest/5 p-3 text-sm">
               <p className="font-semibold text-forest">Client owner invite created</p>
@@ -41,7 +50,22 @@ export default async function OnboardingPage({
             </div>
           ) : null}
           <form action={createCompanyAction} className="mt-4 space-y-3">
-            <input className="w-full rounded-md border border-black/10 px-3 py-2" name="companyName" placeholder="Acme Travel Ltd" required />
+            <input className="w-full rounded-md border border-black/10 px-3 py-2" name="companyName" placeholder="Yummy Tummy Goodies" required />
+            <select className="w-full rounded-md border border-black/10 px-3 py-2" name="companyType" defaultValue="COMPANY">
+              {organisationTypes.map((type) => (
+                <option key={type.value} value={type.value}>
+                  {type.label}
+                </option>
+              ))}
+            </select>
+            <select className="w-full rounded-md border border-black/10 px-3 py-2" name="industryKey" defaultValue="general-business">
+              {industries.map((industry) => (
+                <option key={industry.id} value={industry.key}>
+                  {industry.name}
+                </option>
+              ))}
+            </select>
+            <input className="w-full rounded-md border border-black/10 px-3 py-2" name="countryCode" defaultValue="KE" maxLength={2} placeholder="KE" />
             <select className="w-full rounded-md border border-black/10 px-3 py-2" name="packageId" required>
               {packages.map((pkg) => (
                 <option key={pkg.id} value={pkg.id}>
@@ -49,7 +73,7 @@ export default async function OnboardingPage({
                 </option>
               ))}
             </select>
-            <select className="w-full rounded-md border border-black/10 px-3 py-2" name="isolationTier" defaultValue="SHARED">
+            <select className="w-full rounded-md border border-black/10 px-3 py-2" name="isolationTier" defaultValue="PROFILE">
               {isolationTiers.map((tier) => (
                 <option key={tier.value} value={tier.value}>
                   {tier.label}
@@ -89,14 +113,14 @@ export default async function OnboardingPage({
                   {isolationLabel(company.isolationTier)}
                 </p>
                 <p className="mt-2 text-xs text-graphite">
-                  Namespace: {company.hermesNamespace ?? "not set"}
+                  Type: {company.type} · Industry: {company.industryKey ?? "not set"} · Runtime: organisation profile
                 </p>
               </Card>
             ))
           ) : (
             <EmptyState
               title="No client workspaces yet"
-              description="Create the first external company after Kipekee Studio has validated the workflow internally."
+              description="Create the first external organisation after Kipekee Studio has validated the work instructions internally."
             />
           )}
         </div>

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useFormStatus } from "react-dom";
-import { ArrowUp, Loader2 } from "lucide-react";
+import { ArrowUp, Loader2, Plus } from "lucide-react";
 import { WorkingText } from "./Interactive";
 
 function ChatSubmit() {
@@ -13,7 +13,7 @@ function ChatSubmit() {
       <WorkingText active={pending} />
       <button
         aria-label="Send message"
-        className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-ink text-paper transition hover:bg-forest disabled:cursor-not-allowed disabled:opacity-70"
+        className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-copper text-white transition hover:bg-forest disabled:cursor-not-allowed disabled:opacity-70"
         disabled={pending}
       >
         {pending ? <Loader2 className="animate-spin" size={18} /> : <ArrowUp size={18} />}
@@ -26,7 +26,10 @@ export function ChatComposer({
   conversations = [],
   employees,
   selectedEmployeeId,
-  sessionId
+  sessionId,
+  showWebSearch = false,
+  showUrlExtraction = false,
+  workflows = []
 }: {
   conversations?: Array<{
     active: boolean;
@@ -36,12 +39,15 @@ export function ChatComposer({
     running: boolean;
     title: string;
   }>;
-  employees: Array<{ id: string; displayName: string; hermesProfile: string | null }>;
+  employees: Array<{ id: string; displayName: string }>;
   selectedEmployeeId?: string;
   sessionId?: string;
+  showWebSearch?: boolean;
+  showUrlExtraction?: boolean;
+  workflows?: Array<{ id: string; name: string }>;
 }) {
   return (
-    <div className="rounded-[28px] border border-black/10 bg-white p-3 shadow-panel">
+    <div className="rounded-[26px] border border-violetline bg-white p-3 shadow-panel">
       {conversations.length ? (
         <div className="mb-3 flex gap-2 overflow-x-auto border-b border-black/10 pb-3">
           {conversations.map((conversation) => (
@@ -67,10 +73,10 @@ export function ChatComposer({
           ))}
         </div>
       ) : null}
-      <div className="mb-3 flex flex-wrap items-center gap-2 border-b border-black/10 pb-3">
+      <div className="mb-3 flex flex-wrap items-center gap-2 border-b border-violetline pb-3">
         {sessionId ? <input name="sessionId" type="hidden" value={sessionId} /> : null}
         <select
-          className="rounded-full border border-black/10 bg-paper px-3 py-2 text-sm font-semibold text-ink outline-none"
+          className="min-h-10 rounded-full border border-violetline bg-paper px-3 py-2 text-sm font-semibold text-ink outline-none"
           defaultValue={selectedEmployeeId}
           name="employeeId"
           required
@@ -82,17 +88,63 @@ export function ChatComposer({
           ))}
         </select>
         <span className="rounded-full bg-forest/10 px-3 py-2 text-xs font-semibold text-forest">
-          Company scoped
+          Organisation scoped
         </span>
+        {workflows.length ? (
+          <select
+            className="min-h-10 rounded-full border border-violetline bg-paper px-3 py-2 text-sm font-semibold text-ink outline-none"
+            name="workflowId"
+            defaultValue=""
+          >
+            <option value="">Direct chat</option>
+            {workflows.map((instruction) => (
+              <option key={instruction.id} value={instruction.id}>
+                {instruction.name}
+              </option>
+            ))}
+          </select>
+        ) : null}
       </div>
       <div className="flex items-end gap-3">
+        <Link aria-label="Add file or command" className="mb-1 grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#f5f0ff] text-forest" href="/artifacts">
+          <Plus size={18} />
+        </Link>
         <textarea
           className="max-h-52 min-h-20 flex-1 resize-none rounded-2xl bg-paper px-4 py-3 text-sm leading-6 outline-none placeholder:text-graphite"
           name="prompt"
-          placeholder="Ask an AI employee to draft, analyze, plan, summarize, or prepare next actions..."
+          placeholder="Ask anything or type a command..."
           required
         />
         <ChatSubmit />
+      </div>
+      {showUrlExtraction ? (
+        <label className="mt-3 block text-xs font-semibold text-graphite">
+          Extract one public URL for this request
+          <input
+            className="mt-2 min-h-10 w-full rounded-2xl border border-violetline bg-paper px-3 py-2 text-sm font-medium text-ink outline-none"
+            name="sourceUrl"
+            placeholder="https://example.com/tender-or-grant-page"
+            type="url"
+          />
+        </label>
+      ) : null}
+      {showWebSearch ? (
+        <label className="mt-3 block text-xs font-semibold text-graphite">
+          Search the web for this request
+          <input
+            className="mt-2 min-h-10 w-full rounded-2xl border border-violetline bg-paper px-3 py-2 text-sm font-medium text-ink outline-none"
+            name="searchQuery"
+            placeholder="Example: current Kenya SME food packaging grant opportunities"
+            type="search"
+          />
+        </label>
+      ) : null}
+      <div className="mt-3 flex gap-2 overflow-x-auto pb-1 text-xs font-semibold text-graphite">
+        {["/proposal", "/tender", "/grant", "/email", "/upload", "/summarize", "/task", "/instruction"].map((command) => (
+          <span className="shrink-0 rounded-xl bg-[#f5f0ff] px-3 py-2" key={command}>
+            {command}
+          </span>
+        ))}
       </div>
     </div>
   );

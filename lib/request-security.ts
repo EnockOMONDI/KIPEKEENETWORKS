@@ -6,6 +6,9 @@ export async function assertSameOrigin() {
   const host = headerStore.get("x-forwarded-host") ?? headerStore.get("host");
 
   if (!origin || !host) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("Missing request origin.");
+    }
     return;
   }
 
@@ -13,6 +16,19 @@ export async function assertSameOrigin() {
   if (originHost !== host) {
     throw new Error("Invalid request origin.");
   }
+}
+
+export async function requestOrigin() {
+  const headerStore = await headers();
+  const forwardedProto = headerStore.get("x-forwarded-proto");
+  const proto = forwardedProto ?? (process.env.NODE_ENV === "production" ? "https" : "http");
+  const host = headerStore.get("x-forwarded-host") ?? headerStore.get("host");
+
+  if (!host) {
+    return null;
+  }
+
+  return `${proto}://${host}`;
 }
 
 export function assertValidEmail(email: string) {

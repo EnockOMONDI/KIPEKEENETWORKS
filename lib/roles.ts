@@ -5,25 +5,38 @@ export const roles = {
   CLIENT_MEMBER: "CLIENT_MEMBER",
   OWNER: "OWNER",
   ADMIN: "ADMIN",
-  MEMBER: "MEMBER"
+  MEMBER: "MEMBER",
+  VIEWER: "VIEWER"
 } as const;
 
 export type Role = (typeof roles)[keyof typeof roles];
 
-export function isKipekeeAdmin(user: { role: string; company: { slug: string } }) {
-  return user.role === roles.KIPEKEE_ADMIN || (user.role === roles.OWNER && user.company.slug === "kipekee-studio");
+type RoleUser = {
+  role: string;
+  memberRole?: string | null;
+};
+
+function effectiveRole(user: RoleUser) {
+  return user.memberRole || user.role;
 }
 
-export function canManageCompany(user: { role: string; company: { slug: string } }) {
-  return isKipekeeAdmin(user) || user.role === roles.CLIENT_OWNER || user.role === roles.CLIENT_ADMIN || user.role === roles.OWNER || user.role === roles.ADMIN;
+export function isKipekeeAdmin(user: RoleUser) {
+  return user.role === roles.KIPEKEE_ADMIN;
 }
 
-export function canManageTeam(user: { role: string; company: { slug: string } }) {
-  return isKipekeeAdmin(user) || user.role === roles.CLIENT_OWNER || user.role === roles.CLIENT_ADMIN || user.role === roles.OWNER || user.role === roles.ADMIN;
+export function canManageCompany(user: RoleUser) {
+  const role = effectiveRole(user);
+  return isKipekeeAdmin(user) || role === roles.CLIENT_OWNER || role === roles.CLIENT_ADMIN || role === roles.OWNER || role === roles.ADMIN;
 }
 
-export function canManageBilling(user: { role: string; company: { slug: string } }) {
-  return isKipekeeAdmin(user) || user.role === roles.CLIENT_OWNER || user.role === roles.OWNER;
+export function canManageTeam(user: RoleUser) {
+  const role = effectiveRole(user);
+  return isKipekeeAdmin(user) || role === roles.CLIENT_OWNER || role === roles.CLIENT_ADMIN || role === roles.OWNER || role === roles.ADMIN;
+}
+
+export function canManageBilling(user: RoleUser) {
+  const role = effectiveRole(user);
+  return isKipekeeAdmin(user) || role === roles.CLIENT_OWNER || role === roles.OWNER;
 }
 
 export function roleLabel(role: string) {
@@ -34,7 +47,8 @@ export function roleLabel(role: string) {
     CLIENT_MEMBER: "Team member",
     OWNER: "Owner",
     ADMIN: "Admin",
-    MEMBER: "Member"
+    MEMBER: "Member",
+    VIEWER: "Viewer"
   };
 
   return labels[role] ?? role;

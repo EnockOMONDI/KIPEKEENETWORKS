@@ -103,12 +103,24 @@ export default async function SystemsPage() {
   });
   const connectorCallsToday = await prisma.auditLog.count({
     where: {
+      action: { startsWith: "connector." },
+      createdAt: { gt: new Date(now.getTime() - 24 * 60 * 60 * 1000) }
+    }
+  });
+  const firecrawlCallsToday = await prisma.auditLog.count({
+    where: {
       action: { startsWith: "connector.firecrawl" },
       createdAt: { gt: new Date(now.getTime() - 24 * 60 * 60 * 1000) }
     }
   });
+  const prismfyCallsToday = await prisma.auditLog.count({
+    where: {
+      action: { startsWith: "connector.prismfy" },
+      createdAt: { gt: new Date(now.getTime() - 24 * 60 * 60 * 1000) }
+    }
+  });
   const runtimePackageReady = await prisma.companyRuntime.count({ where: { status: { in: ["ACTIVE", "READY"] } } });
-  const connectorEnv = envPresence(["FIRECRAWL_API_KEY"]);
+  const connectorEnv = envPresence(["FIRECRAWL_API_KEY", "PRISMFY_API_KEY"]);
 
   const counts = new Map(jobCounts.map((item) => [item.status, item._count.status]));
   const onlineWorkers = workers.filter((worker) => now.getTime() - worker.lastSeenAt.getTime() < onlineWindowMs);
@@ -166,9 +178,10 @@ export default async function SystemsPage() {
         <Metric label="Memory files" value={memoryArtifacts} />
         <Metric label="Tracked storage" value={formatBytes(trackedStorageBytes)} />
       </div>
-      <div className="mt-5 grid gap-4 md:grid-cols-3">
+      <div className="mt-5 grid gap-4 md:grid-cols-4">
         <Metric label="Runtime packages" tone={runtimePackageReady ? "success" : "warning"} value={runtimePackageReady} />
         <Metric label="Firecrawl connector" tone={connectorEnv.FIRECRAWL_API_KEY ? "success" : "warning"} value={connectorEnv.FIRECRAWL_API_KEY ? "Configured" : "Missing key"} />
+        <Metric label="Prismfy search" tone={connectorEnv.PRISMFY_API_KEY ? "success" : "warning"} value={connectorEnv.PRISMFY_API_KEY ? "Configured" : "Missing key"} />
         <Metric label="Connector calls today" tone={connectorCallsToday ? "success" : "neutral"} value={connectorCallsToday} />
       </div>
 
@@ -330,7 +343,8 @@ export default async function SystemsPage() {
               <p>Runtime gaps: {runtimeGaps}</p>
               <p>Runtimes not active: {runtimePending}</p>
               <p>Failed jobs today: {failedJobsToday}</p>
-              <p>Firecrawl calls today: {connectorCallsToday}</p>
+              <p>Firecrawl calls today: {firecrawlCallsToday}</p>
+              <p>Prismfy calls today: {prismfyCallsToday}</p>
             </div>
           </Card>
         </div>

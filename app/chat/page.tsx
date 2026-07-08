@@ -174,6 +174,7 @@ export default async function ChatPage({
                 employees={employees.map((employee) => ({ id: employee.id, displayName: employee.displayName }))}
                   selectedEmployeeId={selectedEmployeeId}
                   sessionId={selectedSession?.id}
+                  showWebSearch={canExtractUrl(selectedEmployeeDetail)}
                   showUrlExtraction={canExtractUrl(selectedEmployeeDetail)}
                   workflows={workflows.map((workflow) => ({ id: workflow.id, name: workflow.name }))}
                 />
@@ -354,6 +355,11 @@ function AssistantWorkspace({
   content: string;
   employeeName: string;
 }) {
+  const pdfLink = content.match(/Download PDF:\s*(\/api\/artifacts\/[^\s]+\/download)/)?.[1];
+  const displayContent = content
+    .replace(/Generated PDF: .+(\n|$)/g, "")
+    .replace(/Download PDF: \/api\/artifacts\/[^\s]+\/download(\n|$)/g, "")
+    .trim();
   return (
     <article className="mr-auto max-w-[94%] overflow-hidden rounded-[24px] border border-violetline bg-white md:max-w-[84%]">
       <div className="flex items-center justify-between gap-3 px-5 py-4">
@@ -369,7 +375,12 @@ function AssistantWorkspace({
         <Badge tone="success">Done</Badge>
       </div>
       <section className="border-t border-violetline px-5 py-4">
-        <p className="whitespace-pre-wrap text-sm leading-7 text-graphite">{content}</p>
+        <p className="whitespace-pre-wrap text-sm leading-7 text-graphite">{displayContent}</p>
+        {pdfLink ? (
+          <Link className="mt-4 inline-flex min-h-11 items-center rounded-2xl border border-violetline bg-[#f5f0ff] px-4 text-sm font-semibold text-forest hover:bg-white" href={pdfLink}>
+            Download PDF
+          </Link>
+        ) : null}
       </section>
       <KnowledgeGatheringCard artifacts={artifacts} />
       <section className="flex flex-wrap gap-2 border-t border-violetline px-5 py-4">

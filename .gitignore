@@ -30,6 +30,8 @@ prisma/dev.db-journal
 dist
 uploads
 uploads/
+scripts/seed-*.ts
+!prisma/seed.ts
 .hermes
 .hermes/
 .kipekee-hermes/

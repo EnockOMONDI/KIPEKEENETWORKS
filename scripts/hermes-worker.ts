@@ -1,4 +1,5 @@
 import { prisma } from "../lib/db";
+import { createGeneratedPdfArtifact, wantsDownloadablePdf } from "../lib/generated-pdf";
 import { runHermesTask } from "../lib/hermes";
 import { verifyHermesJobSignature } from "../lib/hermes-job-signing";
 import { buildMemoryContextFromArtifacts } from "../lib/memory-context";
@@ -297,7 +298,10 @@ async function processOne() {
       : null;
 
     const artifactMemory = buildMemoryContextFromArtifacts(canonical.artifactAccess.map((item) => item.artifact));
-    const connectorMemory = job.memoryContext?.includes("External source extraction:") ? job.memoryContext : "";
+    const connectorMemory =
+      job.memoryContext?.includes("External source extraction:") || job.memoryContext?.includes("External web search:")
+        ? job.memoryContext
+        : "";
     const result = await runHermesTask({
       workspaceId: job.workspaceId,
       companyId: canonical.companyId,
@@ -340,19 +344,44 @@ async function processOne() {
       return true;
     }
 
+    let finalOutput = result.output;
+    if (wantsDownloadablePdf(job.prompt)) {
+      try {
+        const generated = await createGeneratedPdfArtifact({
+          companyId: job.companyId,
+          employeeId: canonical.id,
+          sessionId: job.sessionId,
+          title: `${canonical.company.name} Grant Opportunities`,
+          content: result.output
+        });
+        finalOutput = [
+          result.output,
+          "",
+          `Generated PDF: ${generated.title}`,
+          `Download PDF: ${generated.downloadPath}`
+        ].join("\n");
+      } catch (error) {
+        finalOutput = [
+          result.output,
+          "",
+          "I prepared the content, but I could not save the PDF file right now. Please try generating the PDF again shortly."
+        ].join("\n");
+      }
+    }
+
     await prisma.$transaction([
       prisma.message.create({
         data: {
           sessionId: job.sessionId,
           role: "assistant",
-          content: result.output
+          content: finalOutput
         }
       }),
       prisma.hermesJob.update({
         where: { id: job.id },
         data: {
           status: "COMPLETED",
-          result: result.output,
+          result: finalOutput,
           error: null,
           completedAt: new Date()
         }

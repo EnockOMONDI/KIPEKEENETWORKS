@@ -28,7 +28,7 @@ export const skillPlaybooks: Record<string, SkillPlaybook> = {
       "Client or opportunity requirements supplied by the user, uploaded files, or approved URL extraction.",
       "Delivery assumptions, exclusions, timelines, payment terms, and review owner where available."
     ],
-    allowedTools: ["documents", "memory", "audit", "firecrawl.extractUrl"],
+    allowedTools: ["documents", "memory", "audit", "firecrawl.extractUrl", "prismfy.searchWeb"],
     approvalRules: [
       "Do not submit, send, publish, or promise a final offer without human approval.",
       "Flag missing pricing, legal, eligibility, compliance, or delivery information as review questions.",
@@ -43,7 +43,7 @@ export const skillPlaybooks: Record<string, SkillPlaybook> = {
     failureBehavior: [
       "If requirements are unclear, ask focused questions before drafting.",
       "If approved knowledge is missing, state what is missing and draft only a safe outline.",
-      "If external source extraction fails, continue from user-provided context and ask for the document or URL again."
+      "If external source extraction or web search fails, continue from user-provided context and ask for the document, URL, or search terms again."
     ]
   },
   "tender-grant-tracking": {
@@ -62,7 +62,7 @@ export const skillPlaybooks: Record<string, SkillPlaybook> = {
       "Opportunity title, issuer, source URL or uploaded brief, deadline, eligibility, requirements, budget, and submission channel.",
       "Approval owner and document owner for submission decisions."
     ],
-    allowedTools: ["documents", "memory", "web", "audit", "firecrawl.extractUrl"],
+    allowedTools: ["documents", "memory", "web", "audit", "firecrawl.extractUrl", "prismfy.searchWeb"],
     approvalRules: [
       "Do not submit applications, contact issuers, or make external commitments.",
       "Create approval-ready opportunity summaries and checklists only.",
@@ -75,7 +75,7 @@ export const skillPlaybooks: Record<string, SkillPlaybook> = {
       "Handoff notes for Proposal Writing when the opportunity is worth pursuing."
     ],
     failureBehavior: [
-      "If source extraction fails, ask for the PDF/text or a clearer source link.",
+      "If source extraction or web search fails, ask for the PDF/text, a clearer source link, or better search terms.",
       "If deadline or eligibility is missing, mark it as unknown instead of inventing it.",
       "If fit cannot be scored, explain which organisation facts are needed."
     ]

@@ -1,12 +1,32 @@
 type LogFields = Record<string, unknown>;
 
+function sanitizeLogText(value: string) {
+  if (/Command failed:\s*hermes\b/i.test(value) || /\bhermes\s+-z:/i.test(value)) {
+    if (/No inference provider configured/i.test(value)) {
+      return "Hermes command failed: inference provider is not configured.";
+    }
+    if (/HTTP\s*429|Too Many Requests|rate.?limit/i.test(value)) {
+      return "Hermes command failed: provider rate limit.";
+    }
+    if (/timed out|timeout/i.test(value)) {
+      return "Hermes command failed: execution timed out.";
+    }
+    return "Hermes command failed.";
+  }
+
+  return value.replace(/(-z\s+)([\s\S]+)/g, "$1[redacted]");
+}
+
 function safeValue(value: unknown): unknown {
   if (value instanceof Error) {
     return {
       name: value.name,
-      message: value.message,
-      stack: value.stack?.split("\n").slice(0, 6).join("\n")
+      message: sanitizeLogText(value.message)
     };
+  }
+
+  if (typeof value === "string") {
+    return sanitizeLogText(value);
   }
 
   return value;

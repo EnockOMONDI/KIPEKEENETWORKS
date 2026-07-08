@@ -1,4 +1,5 @@
 import { prisma } from "../lib/db";
+import { createGeneratedPdfArtifact, wantsDownloadablePdf } from "../lib/generated-pdf";
 import { runHermesTask } from "../lib/hermes";
 import { verifyHermesJobSignature } from "../lib/hermes-job-signing";
 import { buildMemoryContextFromArtifacts } from "../lib/memory-context";
@@ -136,11 +137,29 @@ async function failJob(jobId: string, workspaceId: string, companyId: string, re
   ]);
 }
 
+function safeWorkerFailure(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/No inference provider configured/i.test(message)) {
+    return "Hermes inference provider is not configured.";
+  }
+  if (/HTTP\s*429|Too Many Requests|rate.?limit/i.test(message)) {
+    return "Hermes provider rate limit.";
+  }
+  if (/timed out|timeout/i.test(message)) {
+    return "Hermes execution timed out.";
+  }
+  if (/Command failed:\s*hermes\b/i.test(message)) {
+    return "Hermes command failed.";
+  }
+  return "Hermes worker failed.";
+}
+
 async function processOne() {
   const job = await claimJob();
   if (!job) {
     return false;
   }
+  const claimedAt = Date.now();
 
   console.log(`[${workerId}] Running job ${job.id}`);
 
@@ -247,6 +266,24 @@ async function processOne() {
       return true;
     }
 
+    const freshJobBeforeRun = await prisma.hermesJob.findUnique({
+      where: { id: job.id },
+      select: { status: true }
+    });
+    if (freshJobBeforeRun?.status === "CANCELLED" || freshJobBeforeRun?.status === "CANCEL_REQUESTED") {
+      await prisma.hermesJob.update({
+        where: { id: job.id },
+        data: {
+          status: "CANCELLED",
+          error: "Cancelled by user before execution.",
+          completedAt: new Date()
+        }
+      });
+      await writeHeartbeat(null);
+      console.log(`[${workerId}] Cancelled job ${job.id} before Hermes execution`);
+      return true;
+    }
+
     const businessRules = canonical.company.businessRules
       .filter((rule) => !rule.workflowId || rule.workflowId === job.workflowId)
       .map((rule) => `- ${rule.name}: ${rule.ruleText}`)
@@ -261,7 +298,10 @@ async function processOne() {
       : null;
 
     const artifactMemory = buildMemoryContextFromArtifacts(canonical.artifactAccess.map((item) => item.artifact));
-    const connectorMemory = job.memoryContext?.includes("External source extraction:") ? job.memoryContext : "";
+    const connectorMemory =
+      job.memoryContext?.includes("External source extraction:") || job.memoryContext?.includes("External web search:")
+        ? job.memoryContext
+        : "";
     const result = await runHermesTask({
       workspaceId: job.workspaceId,
       companyId: canonical.companyId,
@@ -285,19 +325,63 @@ async function processOne() {
       businessRules
     });
 
+    const freshJobAfterRun = await prisma.hermesJob.findUnique({
+      where: { id: job.id },
+      select: { status: true }
+    });
+    if (freshJobAfterRun?.status === "CANCELLED" || freshJobAfterRun?.status === "CANCEL_REQUESTED") {
+      await prisma.hermesJob.update({
+        where: { id: job.id },
+        data: {
+          status: "CANCELLED",
+          result: null,
+          error: "Cancelled by user during execution.",
+          completedAt: new Date()
+        }
+      });
+      await writeHeartbeat(null);
+      console.log(`[${workerId}] Cancelled job ${job.id} after Hermes execution`);
+      return true;
+    }
+
+    let finalOutput = result.output;
+    if (wantsDownloadablePdf(job.prompt)) {
+      try {
+        const generated = await createGeneratedPdfArtifact({
+          companyId: job.companyId,
+          employeeId: canonical.id,
+          sessionId: job.sessionId,
+          title: `${canonical.company.name} Grant Opportunities`,
+          content: result.output
+        });
+        finalOutput = [
+          result.output,
+          "",
+          `Generated PDF: ${generated.title}`,
+          `Download PDF: ${generated.downloadPath}`
+        ].join("\n");
+      } catch (error) {
+        finalOutput = [
+          result.output,
+          "",
+          "I prepared the content, but I could not save the PDF file right now. Please try generating the PDF again shortly."
+        ].join("\n");
+      }
+    }
+
     await prisma.$transaction([
       prisma.message.create({
         data: {
           sessionId: job.sessionId,
           role: "assistant",
-          content: result.output
+          content: finalOutput
         }
       }),
       prisma.hermesJob.update({
         where: { id: job.id },
         data: {
           status: "COMPLETED",
-          result: result.output,
+          result: finalOutput,
           error: null,
           completedAt: new Date()
         }
@@ -309,7 +393,12 @@ async function processOne() {
           actor: workerId,
           action: "hermes.job.completed",
           target: canonical.displayName,
-          metadata: JSON.stringify({ jobId: job.id, metadata: result.metadata })
+          metadata: JSON.stringify({
+            jobId: job.id,
+            queueWaitMs: job.lockedAt ? job.lockedAt.getTime() - job.createdAt.getTime() : null,
+            workerDurationMs: Date.now() - claimedAt,
+            metadata: result.metadata
+          })
         }
       })
     ]);
@@ -318,7 +407,7 @@ async function processOne() {
     console.log(`[${workerId}] Completed job ${job.id}`);
     return true;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = safeWorkerFailure(error);
     await prisma.hermesJob.update({
       where: { id: job.id },
       data: {

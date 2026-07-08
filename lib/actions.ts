@@ -15,10 +15,10 @@ import { assertSameOrigin, assertValidEmail } from "./request-security";
 import { canManageBilling, canManageCompany, canManageTeam, isKipekeeAdmin, roles } from "./roles";
 import { employeeTemplates, safeOrganisationType, starterWorkflowTemplates } from "./seed-data";
 import { hashPassword, hashToken } from "./security";
-import { logError, logInfo } from "./server-log";
+import { logError, logInfo, logWarn } from "./server-log";
 import { playbookPromptSection } from "./skill-playbooks";
 import { storeArtifactObject } from "./storage";
-import { extractUrlWithFirecrawl, firecrawlContextBlock } from "./tool-gateway";
+import { extractUrlWithFirecrawl, firecrawlContextBlock, prismfySearchContextBlock, searchWithPrismfy } from "./tool-gateway";
 import { validateArtifactUpload } from "./upload-policy";
 const allowedIntegrationProviders = new Set([
   "whatsapp",
@@ -113,6 +113,25 @@ function parseJsonArray(value?: string | null) {
   } catch {
     return [];
   }
+}
+
+function firstPromptUrl(prompt: string) {
+  const match = prompt.match(/https?:\/\/[^\s<>"')\]]+/i);
+  return match?.[0]?.replace(/[.,;:!?]+$/, "");
+}
+
+function inferredWebSearchQuery(prompt: string, companyName: string) {
+  const normalized = prompt.toLowerCase();
+  const asksForSearch = /\b(find|search|look for|research|list|discover|identify|track)\b/.test(normalized);
+  const opportunityIntent = /\b(grant|grants|call for proposals|calls for proposals|cfp|rfp|tender|tenders|funding|donor|opportunit)/.test(normalized);
+  if (!asksForSearch || !opportunityIntent) {
+    return null;
+  }
+  return [
+    prompt,
+    companyName,
+    "Kenya Africa sustainability climate circular economy youth empowerment foundation grants calls for proposals"
+  ].join(" ");
 }
 
 async function assignDefaultSkills(employeeId: string, skillKeys: string[]) {
@@ -404,7 +423,7 @@ export async function uploadArtifactAction(formData: FormData) {
   redirect(`${returnTo}?uploaded=1`);
 }
 
-async function buildJobInput(user: any, employeeId: string, prompt: string, sessionId?: string, workflowId?: string, sourceUrl?: string) {
+async function buildJobInput(user: any, employeeId: string, prompt: string, sessionId?: string, workflowId?: string, sourceUrl?: string, searchQuery?: string) {
   const employee = await prisma.companyEmployee.findFirstOrThrow({
     where: { id: employeeId, companyId: user.companyId },
     include: {
@@ -471,11 +490,23 @@ async function buildJobInput(user: any, employeeId: string, prompt: string, sess
   const memoryContext = buildMemoryContextFromArtifacts(access.map((item) => item.artifact));
   const skillKeys = employee.skills.map((item) => item.skill.key);
   const allowedToolsets = Array.from(new Set(employee.skills.flatMap((item) => parseJsonArray(item.skill.defaultToolsets))));
-  const sourceContext = sourceUrl
-    ? firecrawlContextBlock(
+  const explicitSourceUrl = sourceUrl?.trim();
+  const detectedSourceUrl = explicitSourceUrl ? undefined : firstPromptUrl(prompt);
+  const urlForExtraction = explicitSourceUrl || detectedSourceUrl;
+  const explicitSearchQuery = searchQuery?.trim();
+  const promptSearchQuery = prompt.toLowerCase().startsWith("/search ") ? prompt.slice(8).trim() : undefined;
+  const inferredSearch = promptSearchQuery || explicitSearchQuery ? undefined : inferredWebSearchQuery(prompt, user.company.name);
+  const queryForSearch = explicitSearchQuery || promptSearchQuery;
+  const searchForGateway = queryForSearch || inferredSearch;
+  let sourceContext = "";
+  let searchContext = "";
+
+  if (urlForExtraction) {
+    try {
+      sourceContext = firecrawlContextBlock(
         await extractUrlWithFirecrawl({
           employeeId,
-          rawUrl: sourceUrl,
+          rawUrl: urlForExtraction,
           user: {
             id: user.id,
             email: user.email,
@@ -483,8 +514,45 @@ async function buildJobInput(user: any, employeeId: string, prompt: string, sess
             companyId: user.companyId
           }
         })
-      )
-    : "";
+      );
+    } catch (error) {
+      if (explicitSourceUrl) {
+        throw error;
+      }
+      logWarn("chat.url_extraction.skipped", {
+        workspaceId: user.workspaceId,
+        companyId: user.companyId,
+        employeeId,
+        reason: error instanceof Error ? error.message : "URL extraction unavailable"
+      });
+    }
+  }
+  if (searchForGateway) {
+    try {
+      searchContext = prismfySearchContextBlock(
+        await searchWithPrismfy({
+          employeeId,
+          rawQuery: searchForGateway,
+          user: {
+            id: user.id,
+            email: user.email,
+            workspaceId: user.workspaceId,
+            companyId: user.companyId
+          }
+        })
+      );
+    } catch (error) {
+      logWarn("chat.web_search.skipped", {
+        workspaceId: user.workspaceId,
+        companyId: user.companyId,
+        employeeId,
+        reason: error instanceof Error ? error.message : "Web search unavailable"
+      });
+      if (explicitSearchQuery || promptSearchQuery) {
+        throw error;
+      }
+    }
+  }
   const brandVoice = await prisma.brandVoice.findUnique({ where: { companyId: user.companyId } });
   const businessRules = await prisma.businessRule.findMany({
     where: {
@@ -509,7 +577,7 @@ async function buildJobInput(user: any, employeeId: string, prompt: string, sess
     skillKeys: JSON.stringify(skillKeys),
     allowedArtifactIds: JSON.stringify(access.map((item) => item.artifactId)),
     allowedToolsets: JSON.stringify(allowedToolsets.length ? allowedToolsets : ["chat", "documents", "memory", "audit"]),
-    memoryContext: [memoryContext, sourceContext].filter(Boolean).join("\n\n---\n\n")
+    memoryContext: [memoryContext, sourceContext, searchContext].filter(Boolean).join("\n\n---\n\n")
   };
 
   return {
@@ -536,6 +604,7 @@ export async function chatAction(formData: FormData) {
   const existingSessionId = String(formData.get("sessionId") ?? "");
   const workflowId = String(formData.get("workflowId") ?? "") || undefined;
   const sourceUrl = String(formData.get("sourceUrl") ?? "").trim() || undefined;
+  const searchQuery = String(formData.get("searchQuery") ?? "").trim() || undefined;
 
   if (!employeeId || !prompt) {
     redirect("/chat");
@@ -548,6 +617,7 @@ export async function chatAction(formData: FormData) {
     existingSessionId: existingSessionId || null,
     workflowId: workflowId || null,
     sourceUrl: sourceUrl || null,
+    searchQueryLength: searchQuery?.length ?? 0,
     promptLength: prompt.length
   });
   await enforceRateLimitOrRedirect("chat_create", [`company:${user.companyId}`, `user:${user.id}`, `employee:${employeeId}`], "/chat");
@@ -555,7 +625,7 @@ export async function chatAction(formData: FormData) {
 
   let input: Awaited<ReturnType<typeof buildJobInput>>;
   try {
-    input = await buildJobInput(user, employeeId, prompt, existingSessionId, workflowId, sourceUrl);
+    input = await buildJobInput(user, employeeId, prompt, existingSessionId, workflowId, sourceUrl, searchQuery);
   } catch (error) {
     if (error instanceof RateLimitError) {
       redirect("/chat?error=rate-limit");

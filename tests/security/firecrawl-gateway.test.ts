@@ -28,12 +28,15 @@ describe("Firecrawl tool gateway", () => {
     expect(gateway).toContain("connector.firecrawl.extracted");
     expect(gateway).toContain("connector.firecrawl.denied");
     expect(gateway).toContain("connector.firecrawl.failed");
+    expect(gateway).toContain("Do not attempt long external browsing");
   });
 
   it("passes extracted source context through signed Hermes jobs", () => {
     expect(actions).toContain("extractUrlWithFirecrawl");
     expect(actions).toContain("firecrawlContextBlock");
-    expect(actions).toContain("memoryContext: [memoryContext, sourceContext]");
+    expect(actions).toContain("firstPromptUrl");
+    expect(actions).toContain("chat.url_extraction.skipped");
+    expect(actions).toContain("memoryContext: [memoryContext, sourceContext, searchContext]");
     expect(actions).toContain("jobSignature: signHermesJob(jobData)");
   });
 });

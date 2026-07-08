@@ -27,6 +27,7 @@ export function ChatComposer({
   employees,
   selectedEmployeeId,
   sessionId,
+  showWebSearch = false,
   showUrlExtraction = false,
   workflows = []
 }: {
@@ -41,6 +42,7 @@ export function ChatComposer({
   employees: Array<{ id: string; displayName: string }>;
   selectedEmployeeId?: string;
   sessionId?: string;
+  showWebSearch?: boolean;
   showUrlExtraction?: boolean;
   workflows?: Array<{ id: string; name: string }>;
 }) {
@@ -123,6 +125,17 @@ export function ChatComposer({
             name="sourceUrl"
             placeholder="https://example.com/tender-or-grant-page"
             type="url"
+          />
+        </label>
+      ) : null}
+      {showWebSearch ? (
+        <label className="mt-3 block text-xs font-semibold text-graphite">
+          Search the web for this request
+          <input
+            className="mt-2 min-h-10 w-full rounded-2xl border border-violetline bg-paper px-3 py-2 text-sm font-medium text-ink outline-none"
+            name="searchQuery"
+            placeholder="Example: current Kenya SME food packaging grant opportunities"
+            type="search"
           />
         </label>
       ) : null}
